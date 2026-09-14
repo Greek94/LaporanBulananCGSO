@@ -1,9 +1,12 @@
 /**
  * ============================================================
- * CGSO - SEJARAH TEMPOH LAPORAN V2
+ * CGSO - SEJARAH TEMPOH LAPORAN V2.1
  * ============================================================
  * READ-ONLY. Tidak mencipta, mengubah atau memadam rekod laporan.
- * Fungsi menggunakan nama V2 untuk mengelakkan konflik dengan fungsi lama.
+ * V2.1: Jika terdapat lebih daripada satu rekod bagi organisasi +
+ * tempoh yang sama, status SUBMITTED/CLOSED diberi keutamaan
+ * berbanding DRAFT supaya laporan yang telah dihantar tidak tersalah
+ * dipaparkan sebagai DRAFT.
  * ============================================================
  */
 
@@ -103,6 +106,16 @@ function getSecretariatDashboardV2(periodId) {
     return normalizePeriodId_(r.PeriodID) === pid;
   });
 
+  // Keutamaan status penting supaya rekod yang telah dihantar tidak
+  // kalah kepada rekod DRAFT yang kebetulan mempunyai UpdatedAt lebih baru.
+  const statusRank_ = function(status) {
+    status = String(status || '').trim().toUpperCase();
+    if (status === 'CLOSED') return 3;
+    if (status === 'SUBMITTED') return 2;
+    if (status === 'DRAFT') return 1;
+    return 0;
+  };
+
   const orgs = getActiveOrganisations_();
   const rows = orgs.map(function(org) {
     const matches = reports.filter(function(r) {
@@ -110,6 +123,9 @@ function getSecretariatDashboardV2(periodId) {
     });
 
     matches.sort(function(a, b) {
+      const rankDiff = statusRank_(b.Status) - statusRank_(a.Status);
+      if (rankDiff !== 0) return rankDiff;
+
       const da = a.UpdatedAt ? new Date(a.UpdatedAt).getTime() : 0;
       const db = b.UpdatedAt ? new Date(b.UpdatedAt).getTime() : 0;
       return db - da;
@@ -120,7 +136,7 @@ function getSecretariatDashboardV2(periodId) {
       organisationId: org.OrganisationID,
       code: org.Code,
       name: org.OrganisationName,
-      status: r ? String(r.Status || 'DRAFT').toUpperCase() : 'NOT_STARTED',
+      status: r ? String(r.Status || 'DRAFT').trim().toUpperCase() : 'NOT_STARTED',
       completion: r ? Number(r.CompletionPercent || 0) : 0,
       submittedAt: r ? r.SubmittedAt : '',
       updatedAt: r ? r.UpdatedAt : '',
