@@ -1,162 +1,81 @@
 /**
- * Senarai tempoh laporan untuk Dashboard Urus Setia.
- * READ-ONLY: tidak mencipta, mengubah atau memadam period/report.
- *
- * Sumber utama sejarah ialah REPORTS kerana dashboard memang membaca
- * laporan sedia ada daripada sheet tersebut. Ini mengelakkan isu format
- * PeriodID dalam REPORT_PERIODS menyebabkan dropdown kosong.
+ * ============================================================
+ * TEMPOH LAPORAN - DASHBOARD URUS SETIA
+ * ============================================================
+ * READ-ONLY. Tidak mencipta, mengubah atau memadam data.
+ * ============================================================
  */
 function getSecretariatPeriods() {
   const user = getCurrentUser();
-  if (!user || user.authorized !== true) {
-    throw new Error('Pengguna tidak dibenarkan.');
-  }
-
+  if (!user || user.authorized !== true) throw new Error('Pengguna tidak dibenarkan.');
   const role = String(user.role || '').trim().toUpperCase();
-  if (role !== 'SECRETARIAT' && role !== 'ADMIN') {
-    throw new Error('Akses ini hanya untuk Urus Setia/Admin.');
-  }
+  if (role !== 'SECRETARIAT' && role !== 'ADMIN') throw new Error('Akses ini hanya untuk Urus Setia/Admin.');
 
+  const tz = Session.getScriptTimeZone() || 'Asia/Kuala_Lumpur';
+  const months = ['Januari','Februari','Mac','April','Mei','Jun','Julai','Ogos','September','Oktober','November','Disember'];
   const result = [];
   const seen = {};
-  const monthOrder = {
-    'Januari':1, 'Februari':2, 'Mac':3, 'April':4,
-    'Mei':5, 'Jun':6, 'Julai':7, 'Ogos':8,
-    'September':9, 'Oktober':10, 'November':11, 'Disember':12
-  };
 
-  function canonicalPeriodId_(value) {
-    if (value == null || value === '') return '';
-
-    if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) {
-      return Utilities.formatDate(
-        value,
-        Session.getScriptTimeZone() || 'Asia/Kuala_Lumpur',
-        'yyyy-MM'
-      );
+  function add_(pid, month, year, status, openDate, closeDate) {
+    pid = String(pid || '').trim();
+    if (!pid || seen[pid]) return;
+    let m = String(month || '').trim();
+    let y = Number(year || 0);
+    const x = pid.match(/^(\d{4})-(\d{1,2})/);
+    if (x) {
+      if (!y) y = Number(x[1]);
+      if (!m) m = months[Number(x[2]) - 1] || '';
     }
-
-    const text = String(value).trim();
-    let m = text.match(/^(\d{4})-(\d{1,2})(?:-|$)/);
-    if (m) return m[1] + '-' + String(m[2]).padStart(2, '0');
-
-    m = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-    if (m) return m[3] + '-' + String(m[2]).padStart(2, '0');
-
-    return text;
+    seen[pid] = true;
+    result.push({PeriodID:pid,Month:m,Year:y,Status:String(status || '').trim(),OpenDate:openDate || '',CloseDate:closeDate || '',Label:(m && y) ? m+' '+y : pid});
   }
 
-  function addPeriod_(period, fallbackId) {
-    if (!period && !fallbackId) return;
-
-    const rawId = period && (period.PeriodID || period.periodId || period.periodID);
-    const periodId = canonicalPeriodId_(rawId || fallbackId);
-    if (!periodId || seen[periodId]) return;
-
-    const month = String(period && (period.Month || period.month) || '').trim();
-    const year = Number(period && (period.Year || period.year) || 0);
-    const monthNo = monthOrder[month] || Number(periodId.slice(5, 7)) || 0;
-
-    seen[periodId] = true;
-    result.push({
-      PeriodID: periodId,
-      Month: month,
-      Year: year,
-      Status: String(period && (period.Status || period.status) || '').trim(),
-      OpenDate: period && (period.OpenDate || period.openDate) || '',
-      CloseDate: period && (period.CloseDate || period.closeDate) || '',
-      Label: (month && year) ? month + ' ' + year : periodId,
-      _sort: (year || Number(periodId.slice(0, 4)) || 0) * 100 + monthNo
-    });
-  }
-
-  // 1. Pastikan tempoh semasa sentiasa ada.
-  try {
-    const current = getCurrentOpenPeriod_();
-    addPeriod_(current);
-  } catch (e) {
-    // Dashboard utama masih boleh berfungsi walaupun sumber tempoh semasa gagal.
-  }
-
-  // 2. Ambil semua tempoh yang mempunyai laporan sedia ada.
-  //    READ-ONLY — tiada report/period baharu dicipta.
-  try {
-    const reports = getAllReports_();
-    const periodIds = {};
-
-    reports.forEach(function(report) {
-      const pid = canonicalPeriodId_(
-        report && (report.PeriodID || report.periodId || report.periodID)
-      );
-      if (pid) periodIds[pid] = true;
-    });
-
-    Object.keys(periodIds).forEach(function(pid) {
-      try {
-        const period = getPeriodById_(pid);
-        if (period) {
-          addPeriod_(period, pid);
-        } else {
-          addPeriod_({ PeriodID: pid }, pid);
-        }
-      } catch (e) {
-        addPeriod_({ PeriodID: pid }, pid);
-      }
-    });
-  } catch (e) {
-    // Jangan gagalkan dashboard hanya kerana sejarah laporan tidak tersedia.
-  }
-
-  // 3. Fallback terakhir: baca REPORT_PERIODS jika ada rekod yang belum
-  //    mempunyai laporan dalam REPORTS.
+  // Baca sejarah daripada REPORT_PERIODS jika ada.
   try {
     const db = getDb_();
     const sh = db.getSheetByName(SHEETS.PERIODS || 'REPORT_PERIODS');
-
     if (sh) {
       const values = sh.getDataRange().getValues();
       if (values.length >= 2) {
-        const headers = values[0].map(function(h) {
-          return String(h || '').trim();
-        });
-        const idx = function(name) {
-          return headers.findIndex(function(h) {
-            return h.toLowerCase() === name.toLowerCase();
-          });
-        };
-
-        const iPeriod = idx('PeriodID');
-        const iMonth = idx('Month');
-        const iYear = idx('Year');
-        const iOpen = idx('OpenDate');
-        const iClose = idx('CloseDate');
-        const iStatus = idx('Status');
-
-        if (iPeriod >= 0) {
-          for (let r = 1; r < values.length; r++) {
-            const pid = canonicalPeriodId_(values[r][iPeriod]);
-            if (!pid) continue;
-
-            addPeriod_({
-              PeriodID: pid,
-              Month: iMonth >= 0 ? values[r][iMonth] : '',
-              Year: iYear >= 0 ? values[r][iYear] : '',
-              OpenDate: iOpen >= 0 ? values[r][iOpen] : '',
-              CloseDate: iClose >= 0 ? values[r][iClose] : '',
-              Status: iStatus >= 0 ? values[r][iStatus] : ''
-            }, pid);
+        const headers = values[0].map(h => String(h || '').trim());
+        const idx = n => headers.findIndex(h => h.toLowerCase() === n.toLowerCase());
+        const ip = idx('PeriodID'), im = idx('Month'), iy = idx('Year'), io = idx('OpenDate'), ic = idx('CloseDate'), ist = idx('Status');
+        if (ip >= 0) {
+          for (let r=1; r<values.length; r++) {
+            const raw = values[r][ip];
+            let pid = '';
+            if (Object.prototype.toString.call(raw) === '[object Date]' && !isNaN(raw.getTime())) {
+              pid = Utilities.formatDate(raw, tz, 'yyyy-MM');
+            } else {
+              const text = String(raw == null ? '' : raw).trim();
+              let x = text.match(/^(\d{4})-(\d{1,2})/);
+              if (x) pid = x[1]+'-'+String(x[2]).padStart(2,'0');
+              if (!pid) { x = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); if (x) pid = x[3]+'-'+String(x[2]).padStart(2,'0'); }
+              if (!pid) pid = text;
+            }
+            if (pid) add_(pid, im>=0?values[r][im]:'', iy>=0?values[r][iy]:'', ist>=0?values[r][ist]:'', io>=0?values[r][io]:'', ic>=0?values[r][ic]:'');
           }
         }
       }
     }
-  } catch (e) {
-    // Sumber fallback tidak kritikal.
+  } catch (e) {}
+
+  // Pastikan tempoh semasa sentiasa ada, walaupun REPORT_PERIODS kosong.
+  const now = new Date();
+  const currentId = Utilities.formatDate(now, tz, 'yyyy-MM');
+  if (!seen[currentId]) {
+    try {
+      const p = getCurrentOpenPeriod_();
+      if (p) add_(normalizePeriodId_(p.PeriodID) || currentId, p.Month, p.Year, p.Status || 'OPEN', p.OpenDate, p.CloseDate);
+    } catch (e) {}
+  }
+  if (!seen[currentId]) {
+    const monthNo = Number(Utilities.formatDate(now, tz, 'M'));
+    const year = Number(Utilities.formatDate(now, tz, 'yyyy'));
+    add_(currentId, months[monthNo - 1], year, 'OPEN', new Date(year, monthNo - 1, 1), new Date(year, monthNo, 7, 23, 59, 59));
   }
 
-  return result
-    .sort(function(a, b) { return b._sort - a._sort; })
-    .map(function(p) {
-      delete p._sort;
-      return p;
-    });
+  // Susun terbaru -> terdahulu.
+  result.sort((a,b) => String(b.PeriodID).localeCompare(String(a.PeriodID)));
+  return result;
 }
