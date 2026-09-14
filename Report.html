@@ -1,0 +1,674 @@
+<!DOCTYPE html><html><head><base target="_top"><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Borang Laporan Bulanan CGSO</title><style>
+*{box-sizing:border-box}body{margin:0;background:#f4f6f9;color:#1f2937;font-family:Arial,sans-serif}.wrap{max-width:1400px;margin:auto;padding:22px}.head,.card{background:#fff;border-radius:14px;box-shadow:0 2px 10px rgba(0,0,0,.08);padding:22px;margin-bottom:18px}.head h1{margin:0;color:#17365d}.meta{color:#64748b;margin-top:8px;line-height:1.7}.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.btn{border:0;border-radius:8px;padding:10px 16px;font-weight:700;cursor:pointer}.primary{background:#17365d;color:#fff}.success{background:#15803d;color:#fff}.muted{background:#64748b;color:#fff}.btn:disabled{opacity:.5}.section{border:1px solid #e2e8f0;border-radius:12px;margin-bottom:14px;overflow:hidden}.section h2{margin:0;padding:15px 18px;background:#f8fafc;color:#17365d;font-size:17px}.item{padding:18px;border-top:1px solid #e2e8f0}.item:first-child{border-top:0}.item-title{font-weight:700}.status{display:flex;gap:10px;margin-top:10px;align-items:center}.status select,input,textarea{width:100%;border:1px solid #cbd5e1;border-radius:7px;padding:9px;font:inherit}.status select{width:160px}.activity-box{margin-top:14px;background:#f8fafc;padding:14px;border-radius:10px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.field label{display:block;font-size:12px;font-weight:700;margin-bottom:5px;color:#475569}.activity-row{background:#fff;border:1px solid #e2e8f0;border-radius:9px;padding:12px;margin-top:10px}.activity-actions{display:flex;gap:8px;margin-top:10px}.small{padding:7px 10px;font-size:12px}.pill{display:inline-block;padding:5px 10px;border-radius:999px;background:#fff7ed;color:#c2410c;font-size:12px;font-weight:700}.saved{font-size:13px;color:#15803d}.error{display:none;background:#fee2e2;color:#991b1b;padding:12px;border-radius:8px;margin-bottom:12px}.finance table,.bkps table{width:100%;border-collapse:collapse}.finance th,.finance td,.bkps th,.bkps td{padding:8px;border-bottom:1px solid #e2e8f0;text-align:left;font-size:12px}.finance input,.bkps input{min-width:80px}.loading{text-align:center;padding:50px}.readonly{opacity:.85}.locked{background:#f1f5f9;padding:12px;border-radius:8px;color:#475569}.modal-note{font-size:13px;color:#64748b}@media(max-width:800px){.grid,.grid.three{grid-template-columns:1fr}.wrap{padding:12px}.head,.card{padding:16px}.finance,.bkps{overflow:auto}}
+<style>
+.officer-group{grid-column:1/-1;margin-top:4px;padding-top:8px;border-top:1px solid #dbe3ec}
+.officer-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px}
+.officer-list{display:flex;flex-direction:column;gap:6px}
+.officer-line{display:flex;gap:7px;align-items:center}
+.officer-line input{flex:1}
+</style><style>
+.bottom-toolbar{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin:24px 0 8px;padding:18px 0;border-top:1px solid #e2e8f0}.save-state{font-size:13px;color:#059669;align-self:center;min-width:150px}
+</style></style><style>
+.save-progress{display:inline-flex;align-items:center;gap:8px;vertical-align:middle;margin-left:8px}
+.save-progress-label{font-size:13px;color:#475569;white-space:nowrap}
+.save-progress-track{display:inline-block;width:170px;height:9px;background:#e2e8f0;border-radius:99px;overflow:hidden;vertical-align:middle}
+.save-progress-bar{display:block;width:0%;height:100%;transition:width .25s ease;background:#1d4ed8}
+.bottom-save-progress{margin-left:4px}
+<style>
+.submit-progress{display:inline-flex;align-items:center;gap:8px;vertical-align:middle;margin-left:8px}
+.submit-progress-label{font-size:13px;color:#475569;white-space:nowrap}
+.submit-progress-track{display:inline-block;width:170px;height:9px;background:#e2e8f0;border-radius:99px;overflow:hidden;vertical-align:middle}
+.submit-progress-bar{display:block;width:0%;height:100%;transition:width .25s ease;background:#15803d}
+.bottom-submit-progress{margin-left:4px}
+</style><style>
+.process-overlay{position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;background:rgba(15,23,42,.65);backdrop-filter:blur(2px)}
+.process-overlay.show{display:flex}
+.process-card{width:min(520px,calc(100vw - 40px));background:#fff;border-radius:16px;padding:30px;box-shadow:0 20px 60px rgba(0,0,0,.3);text-align:center}
+.process-card h3{margin:0 0 8px;color:#173b68;font-size:22px}
+.process-card p{margin:0 0 18px;color:#64748b;font-size:14px}
+.process-track{width:100%;height:14px;background:#e2e8f0;border-radius:99px;overflow:hidden}
+.process-bar{width:0;height:100%;background:#173b68;transition:width .25s ease}
+.process-percent{margin-top:12px;font-size:20px;font-weight:700;color:#173b68}
+.process-warning{margin-top:14px;padding:9px 12px;border-radius:8px;background:#f1f5f9;color:#475569;font-size:12px}
+body.process-locked{overflow:hidden}
+</style></style></head><body><div id="processOverlay" class="process-overlay" aria-hidden="true">
+  <div class="process-card" role="dialog" aria-modal="true">
+    <h3 id="processTitle">Sila tunggu</h3>
+    <p id="processMessage">Proses sedang dijalankan.</p>
+    <div class="process-track"><div id="processBar" class="process-bar"></div></div>
+    <div id="processPercent" class="process-percent">0%</div>
+    <div class="process-warning">Jangan membuat perubahan atau menutup halaman semasa proses ini.</div>
+  </div>
+</div>
+<div class="wrap"><div id="loading" class="head loading">Memuatkan borang...</div><div id="error" class="error"></div><div id="app" style="display:none"><div class="head"><h1>Borang Laporan Bulanan CGSO</h1><div id="meta" class="meta"></div><div class="toolbar"><button id="backBtn" class="btn muted" type="button" onclick="goBack()">← Kembali</button><button id="saveBtn" class="btn primary" onclick="saveDraft()">SIMPAN DRAF</button><button id="submitBtn" class="btn success" onclick="submitReport()">HANTAR LAPORAN</button><span id="saveState" class="saved"></span>
+<span id="saveProgress" class="save-progress" style="display:none">
+  <span class="save-progress-label">Menyimpan... <strong id="saveProgressPct">0%</strong></span>
+  <span class="save-progress-track"><span id="saveProgressBar" class="save-progress-bar"></span></span>
+
+<span id="submitProgress" class="submit-progress" style="display:none">
+  <span class="submit-progress-label">Menghantar... <strong id="submitProgressPct">0%</strong></span>
+  <span class="submit-progress-track"><span id="submitProgressBar" class="submit-progress-bar"></span></span>
+</span></span></div></div><div id="form"></div></div></div>
+<script>const REPORT_ID=<?!=JSON.stringify(reportId||'')?>;let data=null,activities=[],finance=[],bkps=[];const $=id=>document.getElementById(id);function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}function showErr(e){$('error').style.display='block';$('error').textContent=e&&e.message?e.message:String(e);$('loading').style.display='none';}function run(fn,...args){return new Promise((res,rej)=>google.script.run.withSuccessHandler(res).withFailureHandler(rej)[fn](...args));}async function goBack(){
+  const btn=$('backBtn');
+  if(btn){btn.disabled=true;btn.textContent='Kembali...';}
+  try{
+    const baseUrl=await run('getWebAppUrl');
+    if(baseUrl){
+      // Navigate the top frame via a real anchor/user gesture.
+      const a=document.createElement('a');
+      a.href=baseUrl;
+      a.target='_top';
+      a.rel='noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      return;
+    }
+  }catch(e){}
+  // Same-document fallback: remove the report query and reload.
+  try{
+    const u=new URL(window.location.href);
+    u.searchParams.delete('reportId');
+    u.searchParams.delete('page');
+    window.location.href=u.toString();
+  }catch(e){
+    if(btn){btn.disabled=false;btn.textContent='← Kembali';}
+  }
+}
+function enforceExaminationNumberFields(){
+  document.querySelectorAll('input[data-k="candidatesPresent"],input[data-k="candidatesAbsent"]').forEach(function(input){
+    input.type='number';
+    input.inputMode='numeric';
+    input.min='0';
+    input.step='1';
+  });
+}
+
+function init(){if(!REPORT_ID){showErr(new Error('ReportID tidak diberikan.'));return;}run('getReportForm',REPORT_ID).then(function(x){data=x||{};data.report=data.report||{};data.period=data.period||{};data.modules=data.modules||[];data.itemStatus=data.itemStatus||{};data.activities=data.activities||[];data.finance=data.finance||[];data.bkpsSpecial=data.bkpsSpecial||[];activities=data.activities.map(normalizeActivity);finance=data.finance.map(x=>({...x}));bkps=data.bkpsSpecial.map(x=>({...x}));render();enforceExaminationNumberFields();}).catch(showErr);}function htmlDateValue(v){
+  if(v===null||v===undefined||v==='') return '';
+  var s=String(v).trim();
+  // Already in HTML date format.
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // ISO datetime.
+  var m=s.match(/^(\d{4})-(\d{2})-(\d{2})[T\s]/);
+  if(m) return m[1]+'-'+m[2]+'-'+m[3];
+  // Google Apps Script safeForClient date format: dd/MM/yyyy HH:mm:ss
+  m=s.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s|$)/);
+  if(m) return m[3]+'-'+m[2]+'-'+m[1];
+  // Fallback for a parseable Date value, using local calendar fields.
+  var d=new Date(s);
+  if(!isNaN(d.getTime())){
+    var y=d.getFullYear();
+    var mo=String(d.getMonth()+1).padStart(2,'0');
+    var da=String(d.getDate()).padStart(2,'0');
+    return y+'-'+mo+'-'+da;
+  }
+  return '';
+}
+
+function htmlTimeValue(v){
+  if(v===null||v===undefined||v==='') return '';
+  if(v instanceof Date){
+    return String(v.getHours()).padStart(2,'0')+':'+String(v.getMinutes()).padStart(2,'0');
+  }
+  var s=String(v).trim();
+  // HTML time format.
+  if(/^\d{2}:\d{2}$/.test(s)) return s;
+  if(/^\d{2}:\d{2}:\d{2}$/.test(s)) return s.slice(0,5);
+
+  // 12-hour format: 11:00 AM / 11:00:00 AM.
+  var m=s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*([AaPp][Mm])$/);
+  if(m){
+    var h=Number(m[1]), min=m[2], ap=m[3].toUpperCase();
+    if(ap==='AM'){ if(h===12)h=0; }
+    else if(h!==12){ h+=12; }
+    return String(h).padStart(2,'0')+':'+min;
+  }
+
+  // Google Sheets display/value variants that include a date.
+  m=s.match(/(?:T|\s)(\d{1,2}):(\d{2})(?::\d{2})?(?:\.\d+)?\s*(AM|PM)?/i);
+  if(m){
+    var hh=Number(m[1]), mm=m[2], ap2=(m[3]||'').toUpperCase();
+    if(ap2==='AM' && hh===12)hh=0;
+    if(ap2==='PM' && hh!==12)hh+=12;
+    return String(hh).padStart(2,'0')+':'+mm;
+  }
+
+  // Never call new Date(s) here: unknown time strings must stay blank
+  // rather than being silently shifted by timezone parsing.
+  return '';
+}
+
+function normalizeActivity(a){
+  a=a||{};
+  return {
+    activityId:a.ActivityID||a.activityId||'',
+    itemCode:String(a.ItemCode||a.itemCode||'').trim(),
+    startDate:a.StartDate||a.startDate||'',
+    endDate:a.EndDate||a.endDate||'',
+    timeStart:a.TimeStart||a.timeStart||'',
+    timeEnd:a.TimeEnd||a.timeEnd||'',
+    title:a.Title||a.title||'',
+    agency:a.Agency||a.agency||'',
+    location:a.Location||a.location||'',
+    locationType:a.LocationType||a.locationType||'',
+    officers:a.Officers||a.officers||'',
+    speakers:a.Speakers||a.speakers||'',
+    participants:a.Participants??a.participants??'',
+    candidatesPresent:a.CandidatesPresent??a.candidatesPresent??'',
+    candidatesAbsent:a.CandidatesAbsent??a.candidatesAbsent??'',
+    quantity:a.Quantity??a.quantity??'',
+    notes:a.Notes||a.notes||''
+  };
+}function statusOf(code){const x=data.itemStatus||{};return x[code]&&x[code].status?String(x[code].status).toUpperCase():'';}function typeFields(item,a){
+  a=a||{};
+  const t=String(item.InputType||'').toUpperCase();
+  const code=String(item.ItemCode||'').trim();
+  let fields=(item.Fields||[]).map(String);
+
+  if(code==='2.2'){
+    fields=['Tarikh Mula','Tajuk/Perkara','Lokasi','Nama Pegawai Terlibat','Catatan'];
+  }else if(code==='2.3'||code==='3.2'||code==='3.3'){
+    fields=['Tarikh Mula','Tajuk/Perkara','Lokasi','Nama Pegawai Terlibat','Catatan'];
+  }else if(code==='7.3'||code==='7.4'||code==='7.5'){
+    fields=['Tarikh','Nama Kementerian/Jabatan/Agensi','Jumlah','Catatan'];
+  }else if(code==='9.2'){
+    fields=[];
+  }else if(code==='10.1'||code==='10.2'||code==='10.3'){
+    fields=['Tarikh Mula','Tarikh Akhir','Masa Mula','Masa Akhir','Tajuk/Perkara','Lokasi','Nama Pegawai Terlibat','Penceramah','Jumlah Peserta','Catatan'];
+  }else if(code==='10.4'){
+    fields=['Tarikh Mula','Tarikh Akhir','Masa Mula','Masa Akhir','Tajuk/Perkara','Lokasi','Nama Pegawai Terlibat','Jumlah Calon Hadir','Jumlah Calon Tidak Hadir'];
+  }
+
+  let html='';
+  fields.forEach(function(f){
+    const l=f.toLowerCase();
+    let key='';
+    if(l.includes('tarikh mula'))key='startDate';
+    else if(l.includes('tarikh akhir'))key='endDate';
+    else if(l==='tarikh')key='startDate';
+    else if(l.includes('masa mula'))key='timeStart';
+    else if(l.includes('masa akhir'))key='timeEnd';
+    else if(l==='masa')key='timeStart';
+    else if(l.includes('tajuk'))key='title';
+    else if(l.includes('kementerian')||l.includes('agensi'))key='agency';
+    else if(l.includes('lokasi'))key=t==='ADVICE'||t==='ADVICE_AGENCY'?'locationType':'location';
+    else if(l.includes('pegawai'))key='';
+    else if(l.includes('penceramah'))key='speakers';
+    else if(l.includes('peserta'))key='participants';
+    else if(l.includes('tidak hadir'))key='candidatesAbsent';
+    else if(l.includes('hadir'))key='candidatesPresent';
+    else if(l.includes('jumlah'))key='quantity';
+    else if(l.includes('catatan'))key='notes';
+    if(!key)return;
+
+    const type=(key.includes('Date')?'date':key.includes('time')?'time':
+      (key==='participants'||key==='quantity'||key.toLowerCase().includes('candidates')?'number':'text'));
+    let options='';
+    if(key==='locationType'){
+      const current=String(a[key]||'');
+      options='<option value="" '+(!current?'selected':'')+'>Pilih</option>'+
+        ['DALAM PEJABAT','LUAR PEJABAT','TELEFON','E-MEL'].map(function(v){
+          return '<option value="'+esc(v)+'" '+(current===v?'selected':'')+'>'+esc(v)+'</option>';
+        }).join('');
+    }
+    const value=type==='date'?htmlDateValue(a[key]):(type==='time'?htmlTimeValue(a[key]):(a[key]||''));
+    const isCandidateCount=(key==='candidatesPresent'||key==='candidatesAbsent');
+    const inputAttrs=isCandidateCount
+      ? `type="number" inputmode="numeric" min="0" step="1" data-k="${key}" value="${esc(value)}"`
+      : `type="${type}" data-k="${key}" value="${esc(value)}"`;
+    html+=`<div class="field"><label>${esc(f)}</label>${options?`<select data-k="${key}">${options}</select>`:`<input ${inputAttrs}>`}</div>`;
+  });
+  return `<div class="grid">${html}</div>`;
+}function itemActivities(code){
+  var wanted=String(code||'').trim().toUpperCase();
+  return activities.map(function(a,i){return Object.assign({},a,{_i:i});})
+    .filter(function(a){return String(a.itemCode||'').trim().toUpperCase()===wanted;});
+}function addActivity(code){
+  collect();
+  activities.push({
+    activityId:'',
+    itemCode:code,
+    startDate:'',
+    endDate:'',
+    timeStart:'',
+    timeEnd:'',
+    title:'',
+    agency:'',
+    location:'',
+    locationType:'',
+    officers:'',
+    speakers:'',
+    participants:'',
+    candidatesPresent:'',
+    candidatesAbsent:'',
+    quantity:'',
+    notes:''
+  });
+  render();
+}function removeActivity(i){collect();activities.splice(i,1);render();}function readActivity(i,el){
+  const a=activities[i];
+  el.querySelectorAll('[data-k]').forEach(function(x){a[x.dataset.k]=x.value;});
+  a.officers=Array.from(el.querySelectorAll('[data-officer]')).map(function(x){return x.value.trim();}).filter(Boolean).join('; ');
+}function renderActivity(item,a){
+  var code=String(item.ItemCode||'').trim();
+  var showOfficer=!['7.3','7.4','7.5','9.2'].includes(code);
+  var officerHtml='';
+  if(showOfficer){
+    var officerList=String(a.officers||'').split(/\s*;\s*|\n/).map(function(x){return x.trim();}).filter(Boolean);
+    if(!officerList.length)officerList=[''];
+    officerHtml=officerList.map(function(name,j){
+      return `<div class="officer-line"><input type="text" data-officer="${j}" value="${esc(name)}" placeholder="Nama pegawai terlibat"><button type="button" class="btn muted small" onclick="removeOfficer(this)">Buang</button></div>`;
+    }).join('');
+  }
+  return `<div class="activity-row" data-i="${a._i}" data-item-code="${esc(code)}">${typeFields(item,a)}${showOfficer?`<div class="officer-group"><div class="officer-head"><strong>Nama Pegawai Terlibat</strong><button type="button" class="btn primary small" onclick="addOfficer(this)">+ Tambah Pegawai</button></div><div class="officer-list">${officerHtml}</div></div>`:''}<div class="activity-actions"><button class="btn muted small" type="button" onclick="removeActivity(${a._i})">Buang Aktiviti</button></div></div>`;
+}function addOfficer(btn){
+  var row=btn.closest('.activity-row');
+  if(!row)return;
+  var list=row.querySelector('.officer-list');
+  var line=document.createElement('div');
+  line.className='officer-line';
+  line.innerHTML='<input type="text" data-officer placeholder="Nama pegawai terlibat"><button type="button" class="btn muted small" onclick="removeOfficer(this)">Buang</button>';
+  list.appendChild(line);
+  line.querySelector('input').focus();
+}
+function removeOfficer(btn){
+  var row=btn.closest('.activity-row');
+  var line=btn.closest('.officer-line');
+  if(!row||!line)return;
+  var list=row.querySelector('.officer-list');
+  var lines=list.querySelectorAll('.officer-line');
+  if(lines.length<=1){line.querySelector('input').value='';return;}
+  line.remove();
+}
+function changeStatus(code,value){
+  collect();
+
+  if(!data.itemStatus)data.itemStatus={};
+  if(!data.itemStatus[code])data.itemStatus[code]={};
+
+  data.itemStatus[code].status=value;
+
+  // Jika pengguna memilih TIADA, tutup/sembunyikan Rekod Aktiviti
+  // dan buang rekod aktiviti semasa daripada borang. Jika draf
+  // disimpan, server juga akan menggantikan rekod aktiviti dengan
+  // senarai semasa (iaitu kosong untuk item ini).
+  if(String(value).toUpperCase()==='TIADA' && String(code)!=='9.2'){
+    activities=activities.filter(function(a){
+      return String(a.itemCode||'').trim() !== String(code||'').trim();
+    });
+  }
+
+  render();
+}
+function render(){
+  const r=data.report||{},p=data.period||{},org=r.OrganisationName||'';
+  const orgCode=String(r.OrganisationCode||'').trim().toUpperCase();
+  const isBKPS=(orgCode==='BKPS'||String(r.OrganisationID||'').trim().toUpperCase()==='ORG004');
+  const currentRole=String((data.user&&data.user.role)||data.userRole||'').trim().toUpperCase(); const editable=!!data.editable && (['ADMIN','PREPARER'].includes(currentRole) || !currentRole);
+
+  $('meta').innerHTML=`<strong>Organisasi:</strong> ${esc(org)} &nbsp; | &nbsp; <strong>Kod:</strong> ${esc(r.OrganisationCode||'')} &nbsp; | &nbsp; <strong>Tempoh:</strong> ${esc(p.Month||p.PeriodID||r.PeriodID||'')} &nbsp; | &nbsp; <strong>Status:</strong> <span class="pill">${esc(r.Status||'DRAFT')}</span>`;
+
+  if(!editable){
+    $('saveBtn').disabled=true;
+    $('submitBtn').disabled=true;
+  }
+
+  let html='';
+  const items=data.items||[];
+
+  for(let sec=1;sec<=10;sec++){
+    const arr=items.filter(x=>Number(x.Section)===sec);
+    if(!arr.length)continue;
+
+    html+=`<div class="section"><h2>BAHAGIAN ${sec} — LAPORAN BULANAN</h2>`;
+
+    arr.forEach(item=>{
+      const code=String(item.ItemCode||'').trim();
+
+      // 9.2 ialah modul khas BKPS. Jangan paparkan kepada organisasi lain.
+      // 9.2 ialah borang khas BKPS.
+      // Untuk BKPS: status lalai TIADA; jadual hanya dibuka apabila ADA.
+      // Untuk organisasi lain: tidak dipaparkan, tetapi status TIADA
+      // akan dihantar secara automatik supaya validasi tidak meminta 9.2.
+      if(code==='9.2'){
+        if(!isBKPS) return;
+
+        const specialStatus = statusOf('9.2') || 'TIADA';
+        html+=`<div class="item">
+          <div class="item-title">9.2 — ${esc(item.ItemName)}</div>
+          <div class="status">
+            <label>Status:</label>
+            <select id="st-9.2" onchange="changeStatus('9.2',this.value)" ${editable?'':'disabled'}>
+              <option value="ADA" ${specialStatus==='ADA'?'selected':''}>ADA</option>
+              <option value="TIADA" ${specialStatus!=='ADA'?'selected':''}>TIADA</option>
+            </select>
+          </div>
+          ${specialStatus==='ADA'?`<div class="activity-box">
+            <div class="bkps-inline">
+              <div style="overflow:auto">
+                <table class="bkps-table">
+                  <thead>
+                    <tr>
+                      <th>Negeri / Lokasi</th>
+                      <th>Jumlah Keputusan Diterima</th>
+                      <th>Jumlah Keputusan Diproses</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${bkps.map((x,i)=>`<tr>
+                      <td>${esc(x.LocationName||'')}</td>
+                      <td><input type="number" min="0" data-b="received" data-i="${i}" value="${esc(x.DecisionsReceived??0)}" ${editable?'':'disabled'}></td>
+                      <td><input type="number" min="0" data-b="processed" data-i="${i}" value="${esc(x.DecisionsProcessed??0)}" ${editable?'':'disabled'}></td>
+                    </tr>`).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>`:''}
+        </div>`;
+        return;
+      }
+
+      const st=statusOf(code),acts=itemActivities(code);
+
+      html+=`<div class="item">
+        <div class="item-title">${esc(code)} — ${esc(item.ItemName)}</div>
+        <div class="status">
+          <label>Status:</label>
+          <select id="st-${esc(code)}" onchange="changeStatus('${esc(code)}',this.value)" ${editable?'':'disabled'}>
+            <option value="" ${!st?'selected':''}>-- Pilih --</option>
+            <option value="ADA" ${st==='ADA'?'selected':''}>ADA</option>
+            <option value="TIADA" ${st==='TIADA'?'selected':''}>TIADA</option>
+          </select>
+        </div>
+        ${st==='ADA'||acts.length?`<div class="activity-box">
+          <div><strong>Rekod aktiviti</strong> <button class="btn primary small" type="button" ${editable?'':'disabled'} onclick="addActivity('${esc(code)}')">+ Tambah Aktiviti</button></div>
+          ${acts.map(a=>renderActivity(item,a)).join('')||'<div class="modal-note">Tiada rekod aktiviti.</div>'}
+        </div>`:''}
+      </div>`;
+    });
+
+    html+='</div>';
+  }
+
+  // Modul BKP kekal di bahagian bawah.
+  if((data.modules||[]).some(m=>m.ModuleCode==='FINANCE_BKP'))html+=renderFinance(editable);
+
+  // 9.2 sudah dipaparkan di dalam Bahagian 9 untuk BKPS.
+  // Elakkan paparan modul BKPS kali kedua.
+  html+=`<div class="bottom-toolbar">
+    <button class="btn muted" type="button" onclick="goBack()">← Kembali</button>
+    <button id="bottomSaveBtn" class="btn primary" type="button" onclick="saveDraft()" ${editable?'':'disabled'}>SIMPAN DRAF</button>
+    <button id="bottomSubmitBtn" class="btn success" type="button" onclick="submitReport()" ${editable?'':'disabled'}>HANTAR LAPORAN</button>
+    <span id="bottomSaveState" class="save-state"></span>
+<span id="bottomSaveProgress" class="save-progress bottom-save-progress" style="display:none">
+  <span class="save-progress-label">Menyimpan... <strong id="bottomSaveProgressPct">0%</strong></span>
+  <span class="save-progress-track"><span id="bottomSaveProgressBar" class="save-progress-bar"></span></span>
+</span>
+  
+<span id="bottomSubmitProgress" class="submit-progress bottom-submit-progress" style="display:none">
+  <span class="submit-progress-label">Menghantar... <strong id="bottomSubmitProgressPct">0%</strong></span>
+  <span class="submit-progress-track"><span id="bottomSubmitProgressBar" class="submit-progress-bar"></span></span>
+</span>
+</div>`;
+
+  $('form').innerHTML=html;
+
+  activities.forEach(function(a,i){
+    a._i=i;
+    const row=document.querySelector(`.activity-row[data-i="${i}"]`);
+    if(row){
+      row.querySelectorAll('[data-k]').forEach(function(x){
+        const val=a[x.dataset.k]??'';
+        if(x.tagName==='SELECT')x.value=String(val);
+        else if(x.type==='date')x.value=htmlDateValue(val);
+        else if(x.type==='time')x.value=htmlTimeValue(val);
+        else x.value=val;
+      });
+    }
+  });
+
+  // Paparkan semula nilai modul 9.2 selepas render.
+  bkps.forEach(function(x,i){
+    const rcv=document.querySelector(`[data-b="received"][data-i="${i}"]`);
+    const prc=document.querySelector(`[data-b="processed"][data-i="${i}"]`);
+    if(rcv)rcv.value=x.DecisionsReceived??0;
+    if(prc)prc.value=x.DecisionsProcessed??0;
+  });
+
+  $('loading').style.display='none';
+  $('app').style.display='block';
+}function renderFinance(editable){return `<div class="card finance"><h2>Modul Kewangan BKP</h2><div style="overflow:auto"><table><thead><tr><th>Kategori</th><th>Kod</th><th>Butiran</th><th>Peruntukan</th><th>Pindaan</th><th>Perbelanjaan</th><th>Komitmen</th><th></th></tr></thead><tbody>${finance.map((x,i)=>`<tr><td><input data-f="category" data-i="${i}" value="${esc(x.Category||x.category)}" ${editable?'':'disabled'}></td><td><input data-f="code" data-i="${i}" value="${esc(x.Code||x.code)}" ${editable?'':'disabled'}></td><td><input data-f="description" data-i="${i}" value="${esc(x.Description||x.description)}" ${editable?'':'disabled'}></td><td><input type="number" data-f="approved" data-i="${i}" value="${x.Approved||x.approved||0}" ${editable?'':'disabled'}></td><td><input type="number" data-f="revised" data-i="${i}" value="${x.Revised||x.revised||0}" ${editable?'':'disabled'}></td><td><input type="number" data-f="actual" data-i="${i}" value="${x.Actual||x.actual||0}" ${editable?'':'disabled'}></td><td><input type="number" data-f="commitment" data-i="${i}" value="${x.Commitment||x.commitment||0}" ${editable?'':'disabled'}></td><td><button class="btn muted small" onclick="finance.splice(${i},1);render()">Buang</button></td></tr>`).join('')}</tbody></table></div><button class="btn primary small" onclick="finance.push({});render()">+ Tambah Baris</button></div>`;}function renderBkps(editable){return `<div class="card bkps"><h2>Modul Tapisan Keselamatan Instalasi — BKPS</h2><div style="overflow:auto"><table><thead><tr><th>Negeri/Lokasi</th><th>Keputusan Diterima</th><th>Keputusan Diproses</th></tr></thead><tbody>${bkps.map((x,i)=>`<tr><td>${esc(x.LocationName)}</td><td><input type="number" min="0" data-b="received" data-i="${i}" value="${x.DecisionsReceived||0}" ${editable?'':'disabled'}></td><td><input type="number" min="0" data-b="processed" data-i="${i}" value="${x.DecisionsProcessed||0}" ${editable?'':'disabled'}></td></tr>`).join('')}</tbody></table></div></div>`;}function collect(){
+  document.querySelectorAll('[id^="st-"]').forEach(function(x){
+    const code=x.id.substring(3);
+    if(!data.itemStatus)data.itemStatus={};
+    if(!data.itemStatus[code])data.itemStatus[code]={status:''};
+    data.itemStatus[code].status=x.value;
+  });
+
+  // 9.2 ialah borang khas BKPS. Bagi organisasi selain BKPS,
+  // tandakan TIADA secara automatik kerana medan ini tidak dipaparkan.
+  const reportOrgCode=String((data.report&&data.report.OrganisationCode)||'').trim().toUpperCase();
+  const reportOrgId=String((data.report&&data.report.OrganisationID)||'').trim().toUpperCase();
+  const reportIsBKPS=(reportOrgCode==='BKPS'||reportOrgId==='ORG004');
+  if(!reportIsBKPS){
+    if(!data.itemStatus)data.itemStatus={};
+    data.itemStatus['9.2']={status:'TIADA'};
+  } else if(!data.itemStatus['9.2'] || !data.itemStatus['9.2'].status){
+    data.itemStatus['9.2']={status:'TIADA'};
+  }
+
+  document.querySelectorAll('.activity-row').forEach(function(row){
+    const i=Number(row.dataset.i);
+    if(!Number.isFinite(i))return;
+    if(!activities[i])activities[i]={activityId:'',itemCode:row.dataset.itemCode||'',startDate:'',endDate:'',timeStart:'',timeEnd:'',title:'',agency:'',location:'',locationType:'',officers:'',speakers:'',participants:'',candidatesPresent:'',candidatesAbsent:'',quantity:'',notes:''};
+    readActivity(i,row);
+  });
+
+  document.querySelectorAll('[data-f]').forEach(function(x){
+    const i=Number(x.dataset.i); const k=x.dataset.f;
+    if(finance[i])finance[i][k]=x.value;
+  });
+  document.querySelectorAll('[data-b]').forEach(function(x){
+    const i=Number(x.dataset.i); const k=x.dataset.b;
+    if(bkps[i])bkps[i][k==='received'?'DecisionsReceived':'DecisionsProcessed']=Number(x.value||0);
+  });
+
+  return {
+    items:Object.keys(data.itemStatus||{}).map(function(k){return {itemCode:k,status:data.itemStatus[k].status||''};}),
+    activities:activities,
+    finance:finance,
+    bkpsSpecial:bkps
+  };
+}function showProcessOverlay(title,message){
+  const o=$('processOverlay');
+  if(o){o.classList.add('show');o.setAttribute('aria-hidden','false');}
+  document.body.classList.add('process-locked');
+  if($('processTitle'))$('processTitle').textContent=title||'Sila tunggu';
+  if($('processMessage'))$('processMessage').textContent=message||'Proses sedang dijalankan.';
+  setProcessOverlayProgress(0,message||'Proses sedang dijalankan.');
+}
+function setProcessOverlayProgress(percent,label){
+  percent=Math.max(0,Math.min(100,Number(percent)||0));
+  if($('processBar'))$('processBar').style.width=percent+'%';
+  if($('processPercent'))$('processPercent').textContent=percent+'%';
+  if(label && $('processMessage'))$('processMessage').textContent=label;
+}
+function hideProcessOverlay(){
+  const o=$('processOverlay');
+  if(o){o.classList.remove('show');o.setAttribute('aria-hidden','true');}
+  document.body.classList.remove('process-locked');
+}
+function setSaveProgress(percent,label){
+  percent=Math.max(0,Math.min(100,Number(percent)||0));
+  const pct=percent+'%';
+  const top=$('saveProgress'),topBar=$('saveProgressBar'),topPct=$('saveProgressPct');
+  const bottom=$('bottomSaveProgress'),bottomBar=$('bottomSaveProgressBar'),bottomPct=$('bottomSaveProgressPct');
+  if(top)top.style.display='inline-flex'; if(bottom)bottom.style.display='inline-flex';
+  if(topBar)topBar.style.width=pct; if(bottomBar)bottomBar.style.width=pct;
+  if(topPct)topPct.textContent=pct; if(bottomPct)bottomPct.textContent=pct;
+  document.querySelectorAll('.save-progress-label').forEach(function(el){
+    const strong=el.querySelector('strong'); if(strong)el.firstChild.textContent=(label||'Menyimpan...')+' ';
+  });
+  setProcessOverlayProgress(percent,label||'Menyimpan...');
+}
+function hideSaveProgress(){
+  if($('saveProgress'))$('saveProgress').style.display='none';
+  if($('bottomSaveProgress'))$('bottomSaveProgress').style.display='none';
+  hideProcessOverlay();
+}
+async function saveDraft(){
+  try{
+    showProcessOverlay('Menyimpan Draf','Memulakan proses simpan...');
+    const f=collect();
+    $('saveState').textContent='Menyimpan...';
+    if($('bottomSaveState'))$('bottomSaveState').textContent='Menyimpan...';
+    $('saveBtn').disabled=true;
+    if($('bottomSaveBtn'))$('bottomSaveBtn').disabled=true;
+
+    setSaveProgress(0,'Memulakan');
+    await new Promise(r=>setTimeout(r,100));
+    setSaveProgress(10,'Membaca data borang');
+    await new Promise(r=>setTimeout(r,100));
+    setSaveProgress(25,'Menyimpan status item');
+    await new Promise(r=>setTimeout(r,100));
+    setSaveProgress(50,'Menyimpan rekod aktiviti');
+    await new Promise(r=>setTimeout(r,100));
+    setSaveProgress(70,'Menyimpan nama pegawai');
+    await new Promise(r=>setTimeout(r,100));
+    setSaveProgress(85,'Menyimpan modul khas');
+    await new Promise(r=>setTimeout(r,100));
+    setSaveProgress(95,'Mengemaskini laporan');
+
+    const saved=await run('saveReportForm',REPORT_ID,f);
+
+    if(saved){
+      data=saved;
+      data.report=data.report||{};
+      data.period=data.period||{};
+      data.modules=data.modules||[];
+      data.itemStatus=data.itemStatus||{};
+      data.activities=data.activities||[];
+      data.finance=data.finance||[];
+      data.bkpsSpecial=data.bkpsSpecial||[];
+      activities=data.activities.map(normalizeActivity);
+      finance=data.finance.map(function(x){return Object.assign({},x);});
+      bkps=data.bkpsSpecial.map(function(x){return Object.assign({},x);});
+      setSaveProgress(100,'Selesai');
+      render();
+  enforceExaminationNumberFields();
+    }
+
+    const savedMsg='✓ Draf berjaya disimpan pada '+new Date().toLocaleTimeString('ms-MY');
+    $('saveState').textContent=savedMsg;
+    if($('bottomSaveState'))$('bottomSaveState').textContent=savedMsg;
+    setSaveProgress(100,'Draf berjaya disimpan');
+    await new Promise(function(r){setTimeout(r,450);});
+    hideSaveProgress();
+  }catch(e){
+    hideSaveProgress();
+    $('saveState').textContent='Gagal menyimpan draf';
+    if($('bottomSaveState'))$('bottomSaveState').textContent='Gagal menyimpan draf';
+    alert('Gagal menyimpan draf:\n'+(e&&e.message?e.message:String(e)));
+  }finally{
+    $('saveBtn').disabled=false;
+    if($('bottomSaveBtn'))$('bottomSaveBtn').disabled=false;
+  }
+}function setSubmitProgress(percent,label){
+  percent=Math.max(0,Math.min(100,Number(percent)||0));
+  const pct=percent+'%';
+  const top=$('submitProgress'),topBar=$('submitProgressBar'),topPct=$('submitProgressPct');
+  const bottom=$('bottomSubmitProgress'),bottomBar=$('bottomSubmitProgressBar'),bottomPct=$('bottomSubmitProgressPct');
+  if(top)top.style.display='inline-flex'; if(bottom)bottom.style.display='inline-flex';
+  if(topBar)topBar.style.width=pct; if(bottomBar)bottomBar.style.width=pct;
+  if(topPct)topPct.textContent=pct; if(bottomPct)bottomPct.textContent=pct;
+  document.querySelectorAll('.submit-progress-label').forEach(function(el){
+    const strong=el.querySelector('strong'); if(strong)el.firstChild.textContent=(label||'Menghantar...')+' ';
+  });
+  setProcessOverlayProgress(percent,label||'Menghantar...');
+}
+function hideSubmitProgress(){
+  if($('submitProgress'))$('submitProgress').style.display='none';
+  if($('bottomSubmitProgress'))$('bottomSubmitProgress').style.display='none';
+  hideProcessOverlay();
+}
+async function navigateMainPage(){
+  const baseUrl=await run('getWebAppUrl');
+  if(!baseUrl) throw new Error('URL halaman utama tidak tersedia.');
+
+  // Gunakan anchor dengan target _top supaya halaman utama menggantikan
+  // keseluruhan frame Apps Script, bukan frame borang.
+  const a=document.createElement('a');
+  a.href=baseUrl;
+  a.target='_top';
+  a.rel='noopener';
+  a.style.display='none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){try{a.remove();}catch(e){}},1000);
+}
+async function submitReport(){
+  if(!confirm('Hantar laporan ini? Selepas dihantar, pindaan oleh penyedia akan disekat.'))return;
+
+  showProcessOverlay('Menghantar Laporan','Memulakan proses penghantaran...');
+  const topBtn=$('submitBtn'), bottomBtn=$('bottomSubmitBtn');
+  try{
+    const f=collect();
+
+    if(topBtn)topBtn.disabled=true;
+    if(bottomBtn)bottomBtn.disabled=true;
+    if($('saveBtn'))$('saveBtn').disabled=true;
+    if($('bottomSaveBtn'))$('bottomSaveBtn').disabled=true;
+
+    setSubmitProgress(0,'Memulakan penghantaran');
+    await new Promise(r=>setTimeout(r,100));
+    setSubmitProgress(10,'Membaca data borang');
+    await new Promise(r=>setTimeout(r,100));
+    setSubmitProgress(25,'Menyemak status item');
+    await new Promise(r=>setTimeout(r,100));
+    setSubmitProgress(45,'Menyimpan rekod aktiviti');
+    await new Promise(r=>setTimeout(r,100));
+    setSubmitProgress(65,'Menyimpan modul khas');
+    await new Promise(r=>setTimeout(r,100));
+    setSubmitProgress(80,'Mengesahkan laporan');
+    await new Promise(r=>setTimeout(r,100));
+    setSubmitProgress(95,'Menghantar laporan');
+
+    const result=await run('submitReportForm',REPORT_ID,f);
+
+    if(!result || !result.ok){
+      setSubmitProgress(0,'Penghantaran gagal');
+      alert((result&&result.errors||['Laporan tidak dapat dihantar.']).join('\n'));
+      if(topBtn)topBtn.disabled=false;
+      if(bottomBtn)bottomBtn.disabled=false;
+      if($('saveBtn'))$('saveBtn').disabled=false;
+      if($('bottomSaveBtn'))$('bottomSaveBtn').disabled=false;
+      hideSubmitProgress();
+      return;
+    }
+
+    setSubmitProgress(100,'Laporan berjaya dihantar');
+    if($('saveState'))$('saveState').textContent='✓ Laporan berjaya dihantar';
+    if($('bottomSaveState'))$('bottomSaveState').textContent='✓ Laporan berjaya dihantar';
+
+    // Beri masa singkat supaya pengguna nampak 100%, kemudian kembali
+    // ke halaman utama. Jangan gunakan location.reload() kerana ia boleh
+    // menghasilkan skrin putih dalam iframe Web App.
+    await new Promise(r=>setTimeout(r,700));
+    await navigateMainPage();
+
+  }catch(e){
+    alert('Gagal menghantar laporan:\n'+(e&&e.message?e.message:String(e)));
+    hideSubmitProgress();
+    if(topBtn)topBtn.disabled=false;
+    if(bottomBtn)bottomBtn.disabled=false;
+    if($('saveBtn'))$('saveBtn').disabled=false;
+    if($('bottomSaveBtn'))$('bottomSaveBtn').disabled=false;
+  }
+}document.addEventListener('keydown',function(e){
+  const o=$('processOverlay');
+  if(o&&o.classList.contains('show')){e.preventDefault();e.stopPropagation();}
+},true);
+window.addEventListener('load',init);</script></body></html>
