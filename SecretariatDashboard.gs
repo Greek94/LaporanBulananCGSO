@@ -19,11 +19,33 @@ function getSecretariatDashboard(periodId) {
     throw new Error('Akses ini hanya untuk Urus Setia/Admin.');
   }
 
-  const period = periodId ? getPeriodById_(periodId) : getCurrentOpenPeriod_();
+  let period = periodId ? getPeriodById_(periodId) : getCurrentOpenPeriod_();
+
+  // Jika tempoh sejarah tiada lagi dalam REPORT_PERIODS tetapi wujud dalam
+  // REPORTS, bina metadata tempoh secara read-only supaya sejarah masih boleh
+  // dipaparkan. Tiada data baharu ditulis ke spreadsheet.
+  if (!period && periodId) {
+    const pid = normalizePeriodId_(periodId);
+    const m = String(pid || '').match(/^(\d{4})-(\d{2})$/);
+    if (m) {
+      const year = Number(m[1]);
+      const monthNo = Number(m[2]);
+      const months = ['Januari','Februari','Mac','April','Mei','Jun','Julai','Ogos','September','Oktober','November','Disember'];
+      if (monthNo >= 1 && monthNo <= 12) {
+        const openDate = new Date(year, monthNo - 1, 1);
+        const closeDate = new Date(year, monthNo, 7, 23, 59, 59);
+        period = {PeriodID: pid, Month: months[monthNo - 1], Year: year, Status: 'HISTORY', OpenDate: openDate, CloseDate: closeDate};
+      }
+    }
+  }
+
   if (!period) throw new Error('Tempoh laporan tidak dijumpai.');
 
+  const targetPeriodId = normalizePeriodId_(period.PeriodID) || String(period.PeriodID);
   const orgs = getActiveOrganisations_();
-  const reports = getAllReports_().filter(r => String(r.PeriodID) === String(period.PeriodID));
+  const reports = getAllReports_().filter(r => {
+    return (normalizePeriodId_(r.PeriodID) || String(r.PeriodID)) === targetPeriodId;
+  });
 
   const rows = orgs.map(org => {
     const r = reports.find(x => String(x.OrganisationID) === String(org.OrganisationID));
@@ -48,6 +70,7 @@ function getSecretariatDashboard(periodId) {
       closed: rows.filter(x => x.status === 'CLOSED').length,
       notStarted: rows.filter(x => x.status === 'NOT_STARTED').length
     },
+    completionPercent: rows.length ? (rows.reduce((sum,x) => sum + Number(x.completion || 0), 0) / rows.length) : 0,
     rows
   };
 }
@@ -178,36 +201,15 @@ function buildPrintableReportHtml_(form) {
       th{background:#eee}
       .meta th{width:25%;text-align:left}
       .items{page-break-inside:auto}
-      .items tr{page-break-inside:avoid}
       .records{font-size:9pt;margin:0}
-      .records th{background:#f5f5f5}
-    </style>
-  </head><body>${body}</body></html>`;
+    </style></head><body>${body}</body></html>`;
 }
 
 function escPrint_(v) {
-  return String(v ?? '').replace(/[&<>"']/g,c=>({
-    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
-  }[c]));
-}
-
-/**
- * Optional setup for a dedicated Drive folder.
- * Put the folder ID in CONFIG as key REPORT_PDF_FOLDER_ID.
- * If not set, PDFs go to My Drive root.
- */
-function getReportPdfFolder_() {
-  const id = getConfigValue_('REPORT_PDF_FOLDER_ID');
-  return id ? DriveApp.getFolderById(id) : DriveApp.getRootFolder();
-}
-
-function getConfigValue_(key) {
-  const sh = getDb_().getSheetByName('CONFIG');
-  if (!sh) return '';
-  const data = sh.getDataRange().getValues();
-  const h = data.shift();
-  const ki = h.indexOf('Key');
-  const vi = h.indexOf('Value');
-  const row = data.find(r => String(r[ki]) === String(key));
-  return row ? String(row[vi] || '') : '';
+  return String(v == null ? '' : v)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#039;');
 }
