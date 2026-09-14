@@ -30,7 +30,7 @@ function getSecretariatPeriods() {
     result.push({PeriodID:pid,Month:m,Year:y,Status:String(status || '').trim(),OpenDate:openDate || '',CloseDate:closeDate || '',Label:(m && y) ? m+' '+y : pid});
   }
 
-  // Baca sejarah daripada REPORT_PERIODS jika ada.
+  // 1) Baca tempoh rasmi daripada REPORT_PERIODS jika ada.
   try {
     const db = getDb_();
     const sh = db.getSheetByName(SHEETS.PERIODS || 'REPORT_PERIODS');
@@ -60,7 +60,18 @@ function getSecretariatPeriods() {
     }
   } catch (e) {}
 
-  // Pastikan tempoh semasa sentiasa ada, walaupun REPORT_PERIODS kosong.
+  // 2) Tambah mana-mana tempoh yang memang mempunyai laporan dalam REPORTS.
+  //    Ini membolehkan Urus Setia melihat sejarah walaupun rekod tempoh lama
+  //    tidak lagi lengkap dalam REPORT_PERIODS. Bacaan sahaja.
+  try {
+    const reports = getAllReports_();
+    reports.forEach(r => {
+      const pid = normalizePeriodId_(r.PeriodID);
+      if (pid) add_(pid, '', '', r.Status || '', '', '');
+    });
+  } catch (e) {}
+
+  // 3) Pastikan tempoh semasa sentiasa ada.
   const now = new Date();
   const currentId = Utilities.formatDate(now, tz, 'yyyy-MM');
   if (!seen[currentId]) {
@@ -75,7 +86,6 @@ function getSecretariatPeriods() {
     add_(currentId, months[monthNo - 1], year, 'OPEN', new Date(year, monthNo - 1, 1), new Date(year, monthNo, 7, 23, 59, 59));
   }
 
-  // Susun terbaru -> terdahulu.
   result.sort((a,b) => String(b.PeriodID).localeCompare(String(a.PeriodID)));
   return result;
 }
