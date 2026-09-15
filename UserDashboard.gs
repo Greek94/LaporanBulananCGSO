@@ -1,6 +1,6 @@
 /**
  * ============================================================
- * CGSO USER DASHBOARD V2
+ * CGSO USER DASHBOARD
  * ============================================================
  * Read-only dashboard data for PREPARER / SUPERVISOR.
  * Organisation scope is enforced server-side.
@@ -8,7 +8,7 @@
  * ============================================================
  */
 
-function getUserDashboardV2() {
+function getUserDashboard() {
   const user = getCurrentUser();
   assertAuthorized_(user);
   const role = String(user.role || '').trim().toUpperCase();
@@ -33,7 +33,6 @@ function getUserDashboardV2() {
     return String(r.OrganisationID || '') === String(user.organisationId);
   });
 
-  // Status precedence prevents an older DRAFT from overriding SUBMITTED/CLOSED.
   function rank_(s) {
     s = String(s || '').toUpperCase();
     if (s === 'CLOSED') return 4;
@@ -56,7 +55,6 @@ function getUserDashboardV2() {
     if (!byPeriod[pid] || best_(r, byPeriod[pid]) < 0) byPeriod[pid] = r;
   });
 
-  // Ensure current report exists only for the current user when the dashboard is opened.
   let currentReport = byPeriod[targetId] || null;
   if (!currentReport && targetId) {
     currentReport = getOrCreateReport_(targetId, user.organisationId);
@@ -149,7 +147,7 @@ function getUserDashboardV2() {
 }
 
 /** Read-only report access for the same organisation only. */
-function getUserReadOnlyReportV2(reportId) {
+function getUserReadOnlyReport(reportId) {
   const user = getCurrentUser();
   assertAuthorized_(user);
   const role = String(user.role || '').trim().toUpperCase();
