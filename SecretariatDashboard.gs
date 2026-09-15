@@ -1,94 +1,167 @@
 /**
- * CGSO Apps Script v4 — Secretariat Dashboard + Print/PDF
+ * ============================================================
+ * CGSO - SECRETARIAT DASHBOARD
+ * ============================================================
+ * Production backend for Dashboard Urus Setia.
+ * Consolidates the previous dashboard fix, read-only report
+ * metadata, print HTML and PDF generation in one file.
  *
- * Merge with v3/Phase 2 Code.gs. These functions add:
- * - Secretariat dashboard
- * - organisation status table
- * - read-only report view for Secretariat/Admin
- * - print-friendly HTML report
- * - PDF generation to Google Drive
- *
- * Access is server-side: PREPARER/SUPERVISOR cannot use these functions
- * for other organisations.
+ * READ-ONLY terhadap data laporan kecuali audit log / generated files.
+ * ============================================================
  */
 
-function getSecretariatDashboard(periodId) {
+function getSecretariatDashboardV2(periodId) {
   const user = getCurrentUser();
   assertAuthorized_(user);
-  if (!['SECRETARIAT','ADMIN'].includes(String(user.role).toUpperCase())) {
+
+  const role = String(user.role || '').trim().toUpperCase();
+  if (role !== 'ADMIN' && role !== 'SECRETARIAT') {
     throw new Error('Akses ini hanya untuk Urus Setia/Admin.');
   }
 
-  let period = periodId ? getPeriodById_(periodId) : getCurrentOpenPeriod_();
+  const tz = Session.getScriptTimeZone() || 'Asia/Kuala_Lumpur';
+  const months = ['Januari','Februari','Mac','April','Mei','Jun','Julai','Ogos','September','Oktober','November','Disember'];
+  const currentId = Utilities.formatDate(new Date(), tz, 'yyyy-MM');
+  const pid = normalizePeriodId_(periodId || currentId);
+  const m = String(pid).match(/^(\d{4})-(\d{2})$/);
 
-  // Jika tempoh sejarah tiada lagi dalam REPORT_PERIODS tetapi wujud dalam
-  // REPORTS, bina metadata tempoh secara read-only supaya sejarah masih boleh
-  // dipaparkan. Tiada data baharu ditulis ke spreadsheet.
-  if (!period && periodId) {
-    const pid = normalizePeriodId_(periodId);
-    const m = String(pid || '').match(/^(\d{4})-(\d{2})$/);
-    if (m) {
-      const year = Number(m[1]);
-      const monthNo = Number(m[2]);
-      const months = ['Januari','Februari','Mac','April','Mei','Jun','Julai','Ogos','September','Oktober','November','Disember'];
-      if (monthNo >= 1 && monthNo <= 12) {
-        const openDate = new Date(year, monthNo - 1, 1);
-        const closeDate = new Date(year, monthNo, 7, 23, 59, 59);
-        period = {PeriodID: pid, Month: months[monthNo - 1], Year: year, Status: 'HISTORY', OpenDate: openDate, CloseDate: closeDate};
-      }
-    }
-  }
+  if (!m) throw new Error('PeriodID tidak sah: ' + pid);
 
-  if (!period) throw new Error('Tempoh laporan tidak dijumpai.');
+  const year = Number(m[1]);
+  const monthNo = Number(m[2]);
+  if (monthNo < 1 || monthNo > 12) throw new Error('Bulan tidak sah: ' + pid);
 
-  const targetPeriodId = normalizePeriodId_(period.PeriodID) || String(period.PeriodID);
-  const orgs = getActiveOrganisations_();
-  const reports = getAllReports_().filter(r => {
-    return (normalizePeriodId_(r.PeriodID) || String(r.PeriodID)) === targetPeriodId;
+  const period = {
+    PeriodID: pid,
+    Month: months[monthNo - 1],
+    Year: year,
+    Status: pid === currentId ? 'OPEN' : 'HISTORICAL',
+    OpenDate: new Date(year, monthNo - 1, 1, 0, 0, 0),
+    CloseDate: new Date(year, monthNo, 7, 23, 59, 59),
+    Label: months[monthNo - 1] + ' ' + year
+  };
+
+  const allReports = getAllReports_() || [];
+  const reports = allReports.filter(function(r) {
+    return normalizePeriodId_(r.PeriodID) === pid;
   });
 
-  const rows = orgs.map(org => {
-    const r = reports.find(x => String(x.OrganisationID) === String(org.OrganisationID));
+  const rank = function(status) {
+    status = String(status || '').trim().toUpperCase();
+    if (status === 'CLOSED') return 3;
+    if (status === 'SUBMITTED') return 2;
+    if (status === 'DRAFT') return 1;
+    return 0;
+  };
+
+  const orgs = getActiveOrganisations_() || [];
+  const rows = orgs.map(function(org) {
+    const matches = reports.filter(function(r) {
+      return String(r.OrganisationID || '').trim() === String(org.OrganisationID || '').trim();
+    });
+
+    matches.sort(function(a, b) {
+      const rd = rank(b.Status) - rank(a.Status);
+      if (rd !== 0) return rd;
+
+      const ac = Number(a.CompletionPercent || 0);
+      const bc = Number(b.CompletionPercent || 0);
+      if (bc !== ac) return bc - ac;
+
+      const ad = parseDate_(a.UpdatedAt) || parseDate_(a.CreatedAt) || new Date(0);
+      const bd = parseDate_(b.UpdatedAt) || parseDate_(b.CreatedAt) || new Date(0);
+      return bd.getTime() - ad.getTime();
+    });
+
+    const report = matches[0] || null;
+    let completion = report ? Number(report.CompletionPercent || 0) : 0;
+    const status = report ? String(report.Status || 'DRAFT').trim().toUpperCase() : 'NOT_STARTED';
+
+    if (report && status === 'DRAFT' && report.ReportID) {
+      try {
+        const calculated = Number(calculateCompletion_(report.ReportID, report.OrganisationID));
+        if (isFinite(calculated) && calculated >= 0) completion = calculated;
+      } catch (e) {
+        // Kekalkan nilai tersimpan jika pengiraan gagal.
+      }
+    }
+
+    completion = Math.max(0, Math.min(100, completion));
+
     return {
-      organisationId: org.OrganisationID,
-      code: org.Code,
-      name: org.OrganisationName,
-      status: r ? r.Status : 'NOT_STARTED',
-      completion: r ? Number(r.CompletionPercent || 0) : 0,
-      submittedAt: r ? r.SubmittedAt : '',
-      updatedAt: r ? r.UpdatedAt : '',
-      reportId: r ? r.ReportID : ''
+      organisationId: org.OrganisationID || '',
+      code: org.Code || '',
+      name: org.OrganisationName || '',
+      status: status,
+      completion: completion,
+      reportId: report ? String(report.ReportID || '') : '',
+      submittedAt: report ? report.SubmittedAt || '' : '',
+      updatedAt: report ? report.UpdatedAt || '' : ''
     };
   });
 
-  return {
-    period,
+  const submitted = rows.filter(function(r){ return r.status === 'SUBMITTED'; }).length;
+  const draft = rows.filter(function(r){ return r.status === 'DRAFT'; }).length;
+  const closed = rows.filter(function(r){ return r.status === 'CLOSED'; }).length;
+  const notStarted = rows.filter(function(r){ return r.status === 'NOT_STARTED'; }).length;
+  const total = rows.length;
+  const overallCompletion = total
+    ? Math.round(rows.reduce(function(sum, r){ return sum + Number(r.completion || 0); }, 0) / total * 100) / 100
+    : 0;
+
+  return safeForClient_({
+    ok: true,
+    user: user,
+    period: period,
     summary: {
-      total: rows.length,
-      submitted: rows.filter(x => x.status === 'SUBMITTED').length,
-      draft: rows.filter(x => x.status === 'DRAFT').length,
-      closed: rows.filter(x => x.status === 'CLOSED').length,
-      notStarted: rows.filter(x => x.status === 'NOT_STARTED').length
+      total: total,
+      totalExpected: total,
+      totalOrganisations: total,
+      totalOrganizations: total,
+      submitted: submitted,
+      submittedCount: submitted,
+      draft: draft,
+      draftCount: draft,
+      closed: closed,
+      closedCount: closed,
+      notStarted: notStarted,
+      notStartedCount: notStarted,
+      completionRate: overallCompletion,
+      completionPercent: overallCompletion,
+      rows: rows,
+      organisations: rows,
+      organizations: rows
     },
-    completionPercent: rows.length ? (rows.reduce((sum,x) => sum + Number(x.completion || 0), 0) / rows.length) : 0,
-    rows
-  };
+    rows: rows
+  });
 }
 
-/** Read-only report data for Secretariat/Admin. */
+/** Read-only report data for Secretariat/Admin, enriched with organisation metadata. */
 function getReadOnlyReport(reportId) {
   const user = getCurrentUser();
   assertAuthorized_(user);
   if (!['SECRETARIAT','ADMIN'].includes(String(user.role).toUpperCase())) {
     throw new Error('Akses ini hanya untuk Urus Setia/Admin.');
   }
-  return getReportForm(reportId);
+
+  const data = getReportForm(reportId);
+  if (!data || !data.report) return data;
+
+  const r = data.report;
+  const org = findOrganisation_(r.OrganisationID);
+  if (org) {
+    r.OrganisationName = org.OrganisationName || '';
+    r.OrganisationCode = org.Code || '';
+    r.Code = org.Code || '';
+  }
+
+  const p = data.period || {};
+  if (p.Month && p.Year) p.Label = String(p.Month) + ' ' + String(p.Year);
+
+  return data;
 }
 
-/**
- * Create a print-ready HTML file in Drive.
- * The generated HTML can be printed from the browser.
- */
+/** Create a print-ready HTML file in Drive. */
 function generateReportPrintHtml(reportId) {
   const user = getCurrentUser();
   assertAuthorized_(user);
@@ -108,9 +181,7 @@ function generateReportPrintHtml(reportId) {
   return {fileId:file.getId(), fileName:file.getName(), url:file.getUrl()};
 }
 
-/**
- * Generate a PDF in Drive using an HTML blob.
- */
+/** Generate a PDF in Drive using an HTML blob. */
 function generateReportPdf(reportId) {
   const user = getCurrentUser();
   assertAuthorized_(user);
@@ -120,31 +191,23 @@ function generateReportPdf(reportId) {
 
   const form = getReportForm(reportId);
   const html = buildPrintableReportHtml_(form);
-
   const htmlBlob = Utilities.newBlob(html, MimeType.HTML,
     `CGSO_${form.report.OrganisationID}_${form.period.PeriodID}.html`);
-
   const pdfBlob = htmlBlob.getAs(MimeType.PDF)
     .setName(`CGSO_${form.report.OrganisationID}_${form.period.PeriodID}.pdf`);
-
   const file = DriveApp.createFile(pdfBlob);
 
   writeAudit_(reportId, user.userId, 'GENERATE_PDF', file.getName());
-
-  return {
-    fileId:file.getId(),
-    fileName:file.getName(),
-    url:file.getUrl()
-  };
+  return {fileId:file.getId(), fileName:file.getName(), url:file.getUrl()};
 }
 
 function buildPrintableReportHtml_(form) {
   const p = form.period;
   const r = form.report;
   const org = findOrganisation_(r.OrganisationID);
-
   const sections = {};
-  form.items.forEach(item => {
+
+  form.items.forEach(function(item) {
     if (!sections[item.Section]) sections[item.Section] = [];
     sections[item.Section].push(item);
   });
@@ -162,19 +225,19 @@ function buildPrintableReportHtml_(form) {
       <tr><th>Tarikh Tutup</th><td>${escPrint_(formatDateTime_(p.CloseDate))}</td></tr>
     </table>`;
 
-  Object.keys(sections).sort((a,b)=>Number(a)-Number(b)).forEach(sec => {
+  Object.keys(sections).sort(function(a,b){ return Number(a)-Number(b); }).forEach(function(sec) {
     body += `<h2>Bahagian ${escPrint_(sec)}</h2><table class="items">
       <tr><th style="width:12%">Kod</th><th>Perkara</th><th style="width:15%">Status</th></tr>`;
 
-    sections[sec].forEach(item => {
-      const st = form.itemStatus[item.ItemCode]?.status || '-';
+    sections[sec].forEach(function(item) {
+      const st = form.itemStatus[item.ItemCode] ? form.itemStatus[item.ItemCode].status : '-';
       body += `<tr><td>${escPrint_(item.ItemCode)}</td><td>${escPrint_(item.ItemName)}</td><td>${escPrint_(st)}</td></tr>`;
 
-      const acts = form.activities.filter(a => String(a.ItemCode) === String(item.ItemCode));
+      const acts = form.activities.filter(function(a){ return String(a.ItemCode) === String(item.ItemCode); });
       if (acts.length) {
         body += `<tr><td></td><td colspan="2"><table class="records">
           <tr><th>Tarikh</th><th>Tajuk/Perkara</th><th>Lokasi</th><th>Pegawai</th><th>Catatan</th></tr>`;
-        acts.forEach(a => {
+        acts.forEach(function(a) {
           body += `<tr>
             <td>${escPrint_(a.StartDate || '')}${a.EndDate && a.EndDate !== a.StartDate ? ' - '+escPrint_(a.EndDate) : ''}</td>
             <td>${escPrint_(a.Title || '')}</td>
