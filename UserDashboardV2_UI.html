@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Pengguna - CGSO</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f4f7fb;color:#172033}.wrap{max-width:1200px;margin:auto;padding:24px}.top{background:#17365d;color:#fff;border-radius:16px;padding:24px;margin-bottom:20px}.top h1{margin:0 0 8px;font-size:25px}.muted{opacity:.82}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}.card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:18px;box-shadow:0 3px 12px rgba(0,0,0,.04)}.hero{display:grid;grid-template-columns:1.6fr 1fr;gap:18px;margin-bottom:18px}.hero h2{margin:0 0 8px}.big{font-size:34px;font-weight:700;margin:12px 0}.bar{height:12px;background:#e8edf3;border-radius:20px;overflow:hidden}.fill{height:100%;background:#1f6feb;border-radius:20px}.btn{border:0;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer;background:#17365d;color:white}.btn.secondary{background:#e9eef5;color:#17365d}.btn:disabled{opacity:.6;cursor:not-allowed}.attention{border-left:5px solid #d99a00}.section-title{font-size:19px;font-weight:700;margin:24px 0 12px}.chart{display:flex;align-items:end;gap:18px;height:180px;padding:15px 5px}.barcol{flex:1;text-align:center}.vbar{margin:auto;width:38px;background:#2d6cdf;border-radius:7px 7px 0 0;min-height:4px}.history{width:100%;border-collapse:collapse}.history th,.history td{padding:12px;border-bottom:1px solid #e7ebf0;text-align:left}.pill{display:inline-block;padding:5px 9px;border-radius:20px;font-size:12px;font-weight:700}.submitted{background:#dff5e5;color:#19733a}.draft{background:#fff1cf;color:#8a5a00}.closed{background:#e5e7eb;color:#4b5563}.notstarted{background:#f1f5f9;color:#64748b}.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20;padding:30px}.modalbox{background:white;max-width:1000px;max-height:90vh;overflow:auto;margin:auto;border-radius:16px;padding:24px}.close{float:right;font-size:26px;cursor:pointer}.info{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.info div{background:#f7f9fc;padding:12px;border-radius:9px}@media(max-width:800px){.grid,.hero,.info{grid-template-columns:1fr 1fr}.hero{grid-template-columns:1fr}.history{font-size:13px}}@media(max-width:550px){.grid,.info{grid-template-columns:1fr}.wrap{padding:12px}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>Dashboard Pengguna</h1>
+    <div id="userLine" class="muted">Sedang memuatkan...</div>
+  </div>
+
+  <div id="loading" class="card">Sedang memuatkan dashboard...</div>
+  <div id="app" style="display:none">
+    <div class="hero">
+      <div class="card">
+        <div class="muted">LAPORAN BULAN SEMASA</div>
+        <h2 id="periodName">-</h2>
+        <div class="big" id="completion">0%</div>
+        <div class="bar"><div id="fill" class="fill" style="width:0%"></div></div>
+        <p id="statusText" class="muted"></p>
+        <button id="openBtn" class="btn" onclick="openCurrent()">Buka / Sambung Laporan</button>
+      </div>
+      <div class="card attention">
+        <div class="muted">PERHATIAN</div>
+        <h3 id="attentionTitle">-</h3>
+        <p id="attentionText">-</p>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card"><div class="muted">STATUS</div><h2 id="statStatus">-</h2></div>
+      <div class="card"><div class="muted">KELENGKAPAN</div><h2 id="statCompletion">0%</h2></div>
+      <div class="card"><div class="muted">SEJARAH</div><h2 id="statHistory">0</h2></div>
+      <div class="card"><div class="muted">ORGANISASI</div><h2 id="statOrg">-</h2></div>
+    </div>
+
+    <div class="section-title">Prestasi 6 Bulan</div>
+    <div class="card"><div id="chart" class="chart"></div></div>
+
+    <div class="section-title">Sejarah Laporan Bulanan</div>
+    <div class="card"><div style="overflow:auto"><table class="history"><thead><tr><th>Tempoh</th><th>Status</th><th>Kelengkapan</th><th>Tindakan</th></tr></thead><tbody id="historyBody"></tbody></table></div></div>
+
+    <div class="section-title">Maklumat Pengguna</div>
+    <div class="card info"><div><b>Nama</b><br><span id="uName">-</span></div><div><b>E-mel</b><br><span id="uEmail">-</span></div><div><b>Peranan</b><br><span id="uRole">-</span></div><div><b>Organisasi</b><br><span id="oName">-</span></div><div><b>Kod</b><br><span id="oCode">-</span></div></div>
+  </div>
+</div>
+
+<div id="modal" class="modal"><div class="modalbox"><span class="close" onclick="closeModal()">&times;</span><div id="viewer">Memuatkan laporan...</div></div></div>
+
+<script>
+let DATA=null;
+function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+function pct(v){return Math.max(0,Math.min(100,Number(v)||0));}
+function statusClass(s){s=String(s||'').toUpperCase();return s==='SUBMITTED'?'submitted':s==='DRAFT'?'draft':s==='CLOSED'?'closed':'notstarted';}
+function statusLabel(s){return ({SUBMITTED:'TELAH HANTAR',DRAFT:'DRAF',CLOSED:'DITUTUP',NOT_STARTED:'BELUM MULA'})[String(s||'').toUpperCase()]||s||'BELUM MULA';}
+function render(d){DATA=d;const u=d.user||{},o=d.organisation||{},c=d.current||{};document.getElementById('userLine').textContent=(u.displayName||u.email||'-')+' • '+(o.name||'-');document.getElementById('periodName').textContent=c.periodName||c.periodId||'-';let cp=pct(c.completion);document.getElementById('completion').textContent=cp.toFixed(cp%1?1:0)+'%';document.getElementById('fill').style.width=cp+'%';document.getElementById('statusText').textContent='Status: '+statusLabel(c.status);document.getElementById('statStatus').textContent=statusLabel(c.status);document.getElementById('statCompletion').textContent=cp.toFixed(cp%1?1:0)+'%';document.getElementById('statHistory').textContent=(d.history||[]).length;document.getElementById('statOrg').textContent=o.code||'-';document.getElementById('uName').textContent=u.displayName||'-';document.getElementById('uEmail').textContent=u.email||'-';document.getElementById('uRole').textContent=u.role||'-';document.getElementById('oName').textContent=o.name||'-';document.getElementById('oCode').textContent=o.code||'-';document.getElementById('attentionTitle').textContent=d.attention?.title||'Tiada tindakan segera';document.getElementById('attentionText').textContent=d.attention?.message||'Teruskan kemas kini laporan mengikut tempoh yang ditetapkan.';document.getElementById('openBtn').textContent=c.reportId?'Buka / Sambung Laporan':'Buka Laporan';renderChart(d.performance||[]);renderHistory(d.history||[]);document.getElementById('loading').style.display='none';document.getElementById('app').style.display='block';}
+function renderChart(a){const el=document.getElementById('chart');if(!a.length){el.innerHTML='<div class="muted">Tiada data prestasi.</div>';return;}el.innerHTML=a.map(x=>{let v=pct(x.completion);return '<div class="barcol"><div style="font-size:12px;margin-bottom:5px">'+esc(v.toFixed(v%1?1:0))+'%</div><div class="vbar" style="height:'+Math.max(4,v*1.25)+'px"></div><div style="font-size:12px;margin-top:6px">'+esc(x.periodName||x.periodId||'-')+'</div></div>';}).join('');}
+function renderHistory(a){const b=document.getElementById('historyBody');if(!a.length){b.innerHTML='<tr><td colspan="4">Tiada sejarah laporan.</td></tr>';return;}b.innerHTML=a.map(x=>'<tr><td>'+esc(x.periodName||x.periodId||'-')+'</td><td><span class="pill '+statusClass(x.status)+'">'+esc(statusLabel(x.status))+'</span></td><td>'+pct(x.completion).toFixed(pct(x.completion)%1?1:0)+'%</td><td>'+(x.reportId?'<button class="btn secondary" onclick="viewReport(\''+esc(x.reportId).replace(/'/g,"\\'")+'\')">Lihat</button>':'-')+'</td></tr>').join('');}
+function openCurrent(){const id=DATA?.current?.reportId;if(id){const url=(DATA.webAppUrl||'')+'?page=report&reportId='+encodeURIComponent(id);window.top.location.href=url;}else alert('Laporan semasa belum tersedia.');}
+function viewReport(id){document.getElementById('modal').style.display='block';document.getElementById('viewer').innerHTML='Memuatkan laporan...';google.script.run.withSuccessHandler(renderViewer).withFailureHandler(e=>document.getElementById('viewer').innerHTML='<b>Ralat:</b> '+esc(e.message||e)).getUserReadOnlyReportV2(id);}
+function renderViewer(r){let html='<h2>Semakan Laporan</h2><div class="info"><div><b>Organisasi</b><br>'+esc(r.OrganisationName||r.organisation?.name||'-')+'</div><div><b>Tempoh</b><br>'+esc(r.PeriodName||r.periodName||r.PeriodID||'-')+'</div><div><b>Status</b><br>'+esc(statusLabel(r.Status||r.status))+'</div></div>';const items=r.items||r.reportItems||[];if(items.length){html+='<h3 style="margin-top:22px">Butiran Laporan</h3>';items.forEach((it,i)=>{html+='<div class="card" style="margin:10px 0"><b>'+esc(it.Code||it.ItemCode||((i+1)+'.'))+' '+esc(it.Title||it.ItemName||it.Name||'')+'</b>';const acts=it.activities||it.Activities||[];if(acts.length){html+='<ul>'+acts.map(a=>'<li>'+esc(a.description||a.Description||a.activity||a.Activity||JSON.stringify(a))+'</li>').join('')+'</ul>';}else if(it.value!=null||it.Value!=null){html+='<p>'+esc(it.value??it.Value)+'</p>';}html+='</div>';});}document.getElementById('viewer').innerHTML=html;}
+function closeModal(){document.getElementById('modal').style.display='none';}
+function load(){google.script.run.withSuccessHandler(render).withFailureHandler(e=>{document.getElementById('loading').innerHTML='<b>Ralat memuatkan dashboard:</b><br>'+esc(e.message||e);}).getUserDashboardV2();}
+load();
+</script>
+</body>
+</html>
