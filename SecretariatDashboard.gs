@@ -158,7 +158,18 @@ function getReadOnlyReport(reportId) {
   const p = data.period || {};
   if (p.Month && p.Year) p.Label = String(p.Month) + ' ' + String(p.Year);
 
-  return data;
+  // Kekalkan maklumat tambahan yang digunakan oleh paparan laporan khas.
+  const finance = getRecordsByReportIdFromSheet_(SHEETS.FINANCE, reportId);
+  const bkpsSpecial = getRecordsByReportIdFromSheet_(SHEETS.BKPS, reportId);
+
+  return safeForClient_(Object.assign({}, data, {
+    report: r,
+    period: p,
+    finance: finance,
+    bkpsSpecial: bkpsSpecial,
+    editable: false,
+    readOnly: true
+  }));
 }
 
 /** Create a print-ready HTML file in Drive. */
