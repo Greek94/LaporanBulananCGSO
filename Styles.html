@@ -1,1 +1,68 @@
 <!-- Styles are intentionally embedded in page templates for portability. -->
+<script>
+/*
+ * Homepage bootstrap guard.
+ *
+ * The user homepage must not wait on getDashboardData() before loading
+ * the period selector. PREPARER/SUPERVISOR users use the lightweight
+ * user-dashboard functions directly. This script replaces init() just
+ * before the Index.html DOMContentLoaded handler invokes it.
+ */
+document.addEventListener('DOMContentLoaded', function () {
+  if (!document.getElementById('loadingScreen') || typeof google === 'undefined' || !google.script || !google.script.run) return;
+
+  window.init = async function () {
+    try {
+      hideScreens();
+      $('loadingScreen').style.display = 'flex';
+
+      const user = await srv('getCurrentUser');
+
+      if (!user || user.authorized !== true) {
+        if (user) {
+          setText('unauthorizedMessage', user.message || 'Akaun tidak dibenarkan.');
+          setText('unauthorizedEmail', user.email || '-');
+          hideScreens();
+          $('unauthorizedScreen').style.display = 'block';
+          return;
+        }
+        throw new Error('Maklumat pengguna tidak diterima.');
+      }
+
+      currentUser = user;
+      const role = String(user.role || '').toUpperCase();
+
+      if (role === 'ADMIN' || role === 'SECRETARIAT') {
+        const base = await srv('getDashboardData');
+        if (!base || base.authorized !== true) {
+          throw new Error((base && base.message) || 'Maklumat dashboard tidak diterima.');
+        }
+        dashboardData = base;
+        renderHeader(user);
+        renderPeriodInfo(base.period);
+        renderReport({
+          user: user,
+          period: base.period,
+          report: base.report,
+          reportUrl: base.reportUrl
+        });
+        renderAdmin(base);
+        $('dashboard').style.display = 'block';
+        $('loadingScreen').style.display = 'none';
+        return;
+      }
+
+      const list = await srv('getUserReportingPeriods');
+      if (!Array.isArray(list) || !list.length) {
+        throw new Error('Tiada tempoh laporan tersedia.');
+      }
+
+      const currentId = list[0] && list[0].PeriodID ? list[0].PeriodID : '';
+      setupPeriods(list, currentId);
+      await loadSelectedPeriod(currentId);
+    } catch (e) {
+      showError(e);
+    }
+  };
+});
+</script>
