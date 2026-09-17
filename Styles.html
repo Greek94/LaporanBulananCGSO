@@ -2,13 +2,11 @@
 <script>
 /*
  * Homepage bootstrap guard.
- *
- * The user homepage must not wait on getDashboardData() before loading
- * the period selector. PREPARER/SUPERVISOR users use the lightweight
- * user-dashboard functions directly. This script replaces init() just
- * before the Index.html DOMContentLoaded handler invokes it.
+ * The Index.html page registers its original init() listener after this
+ * include. Replace that listener's execution by invoking the lightweight
+ * user-dashboard bootstrap first and stopping the old listener from running.
  */
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener('DOMContentLoaded', function (event) {
   if (!document.getElementById('loadingScreen') || typeof google === 'undefined' || !google.script || !google.script.run) return;
 
   window.init = async function () {
@@ -64,5 +62,10 @@ document.addEventListener('DOMContentLoaded', function () {
       showError(e);
     }
   };
-});
+
+  /* The original Index.html listener is registered after this include.
+     Prevent it from invoking the old getDashboardData-first init(). */
+  event.stopImmediatePropagation();
+  window.init();
+}, { once: true });
 </script>
