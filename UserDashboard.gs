@@ -3,7 +3,7 @@
  * CGSO - USER DASHBOARD / HISTORICAL PERIODS
  * ============================================================
  * Read-only period/report lookup for PREPARER/SUPERVISOR.
- * Current report creation remains handled by getDashboardData().
+ * Current report creation remains handled by the existing report logic.
  * ============================================================
  */
 
@@ -11,16 +11,17 @@ function getUserReportingPeriods() {
   const user = getCurrentUser();
   assertAuthorized_(user);
 
-  const tz = Session.getScriptTimeZone() || 'Asia/Kuala_Lumpur';
   const months = ['Januari','Februari','Mac','April','Mei','Jun','Julai','Ogos','September','Oktober','November','Disember'];
-  const seen = {};
   const result = [];
+  const seen = {};
 
   function addPeriod_(pid, status, openDate, closeDate) {
     pid = normalizePeriodId_(pid);
     if (!pid || seen[pid]) return;
+
     const m = pid.match(/^(\d{4})-(\d{2})$/);
     if (!m) return;
+
     const year = Number(m[1]);
     const monthNo = Number(m[2]);
     if (monthNo < 1 || monthNo > 12) return;
@@ -37,46 +38,63 @@ function getUserReportingPeriods() {
     });
   }
 
+  // REPORT_PERIODS is the authoritative source for the period selector.
+  // Avoid scanning the full REPORTS table here because this function is
+  // called when the homepage first loads and again when a period is opened.
   try {
     const db = getDb_();
     const sh = db.getSheetByName(SHEETS.PERIODS || 'REPORT_PERIODS');
+
     if (sh) {
       const values = sh.getDataRange().getValues();
+
       if (values.length >= 2) {
-        const headers = values[0].map(function(h) { return String(h || '').trim().toLowerCase(); });
-        const idx = function(name) { return headers.indexOf(String(name).toLowerCase()); };
-        const ip = idx('PeriodID');
-        const ist = idx('Status');
-        const io = idx('OpenDate');
-        const ic = idx('CloseDate');
+        const headers = values[0].map(function(h) {
+          return String(h || '').trim().toLowerCase();
+        });
+
+        const idx = function(name) {
+          return headers.indexOf(String(name).toLowerCase());
+        };
+
+        const ip = idx('periodid');
+        const ist = idx('status');
+        const io = idx('opendate');
+        const ic = idx('closedate');
+
         if (ip >= 0) {
           for (let r = 1; r < values.length; r++) {
-            addPeriod_(values[r][ip], ist >= 0 ? values[r][ist] : '', io >= 0 ? values[r][io] : null, ic >= 0 ? values[r][ic] : null);
+            addPeriod_(
+              values[r][ip],
+              ist >= 0 ? values[r][ist] : '',
+              io >= 0 ? values[r][io] : null,
+              ic >= 0 ? values[r][ic] : null
+            );
           }
         }
       }
     }
-  } catch (e) {}
+  } catch (e) {
+    // Keep the selector usable even if the period sheet cannot be read.
+  }
 
-  try {
-    (getAllReports_() || []).forEach(function(r) {
-      addPeriod_(r.PeriodID, r.Status || 'HISTORICAL');
-    });
-  } catch (e) {}
-
-  const now = new Date();
-  const currentYear = Number(Utilities.formatDate(now, tz, 'yyyy'));
-  const currentMonth = Number(Utilities.formatDate(now, tz, 'M'));
-  const startYear = 2025;
-
-  for (let y = startYear; y <= currentYear; y++) {
-    const lastMonth = y === currentYear ? currentMonth : 12;
-    for (let m = 1; m <= lastMonth; m++) {
-      addPeriod_(y + '-' + String(m).padStart(2, '0'), y === currentYear && m === currentMonth ? 'OPEN' : 'HISTORICAL');
+  // Safety fallback: ensure the current period is available to the user.
+  if (!result.length) {
+    const current = getCurrentOpenPeriod_();
+    if (current) {
+      addPeriod_(
+        current.PeriodID,
+        current.Status || 'OPEN',
+        current.OpenDate,
+        current.CloseDate
+      );
     }
   }
 
-  result.sort(function(a, b) { return String(b.PeriodID).localeCompare(String(a.PeriodID)); });
+  result.sort(function(a, b) {
+    return String(b.PeriodID).localeCompare(String(a.PeriodID));
+  });
+
   return safeForClient_(result);
 }
 
@@ -92,8 +110,18 @@ function getUserDashboardByPeriod(periodId) {
   const pid = normalizePeriodId_(periodId);
   if (!pid) throw new Error('Tempoh laporan tidak sah.');
 
-  const periods = getUserReportingPeriods();
-  const period = periods.find(function(p) { return String(p.PeriodID) === pid; });
+  // Read the requested period directly. Do not rebuild the whole period list.
+  let period = getPeriodById_(pid);
+
+  // If the period exists in the sheet but PeriodID is stored as a Date/text
+  // variant, fall back to the lightweight period list normalizer.
+  if (!period) {
+    const periods = getUserReportingPeriods();
+    period = periods.find(function(p) {
+      return String(p.PeriodID) === pid;
+    }) || null;
+  }
+
   if (!period) throw new Error('Tempoh laporan tidak ditemui: ' + pid);
 
   const reports = getAllReports_() || [];
@@ -102,20 +130,22 @@ function getUserDashboardByPeriod(periodId) {
 
   if (orgId) {
     const matches = reports.filter(function(r) {
-      return String(r.PeriodID || '').trim() === pid && String(r.OrganisationID || '').trim() === orgId;
+      return String(normalizePeriodId_(r.PeriodID) || '').trim() === pid &&
+             String(r.OrganisationID || '').trim() === orgId;
     });
+
     matches.sort(function(a, b) {
       const da = new Date(a.UpdatedAt || a.SubmittedAt || 0).getTime() || 0;
       const db = new Date(b.UpdatedAt || b.SubmittedAt || 0).getTime() || 0;
       return db - da;
     });
+
     report = matches.length ? matches[0] : null;
   }
 
-  // Untuk tempoh semasa, kekalkan tingkah laku sedia ada: jika report belum wujud,
-  // cipta satu melalui fungsi rasmi. Tempoh sejarah kekal read-only.
+  // Only the current open period may create a missing report.
   const current = getCurrentOpenPeriod_();
-  if (!report && current && String(current.PeriodID || '') === pid) {
+  if (!report && current && String(normalizePeriodId_(current.PeriodID)) === pid) {
     report = getOrCreateReport_(pid, orgId);
   }
 
