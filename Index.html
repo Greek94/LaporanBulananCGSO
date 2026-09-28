@@ -78,33 +78,228 @@
 </div>
 
 <script>
-let dashboardData=null,currentUser=null,periods=[],currentPeriodId='';
-const months=['Januari','Februari','Mac','April','Mei','Jun','Julai','Ogos','September','Oktober','November','Disember'];
-function $(id){return document.getElementById(id)}
-function setLoadingStep(message){var el=$('loadingMessage');if(el)el.textContent=message;console.log('[CGSO]',message)}
-function srv(fn,...args){return new Promise(function(resolve,reject){let done=false;setLoadingStep('Memanggil server: '+fn+'...');const t=setTimeout(function(){if(!done){done=true;setLoadingStep('Server tidak memberi respons selepas 20 saat.');reject(new Error('Sambungan ke sistem mengambil masa terlalu lama. Fungsi: '+fn))}},20000);try{const runner=google.script.run.withSuccessHandler(function(r){if(done)return;done=true;clearTimeout(t);setLoadingStep('Server berjaya: '+fn);resolve(r)}).withFailureHandler(function(e){if(done)return;done=true;clearTimeout(t);setLoadingStep('Server gagal: '+fn);reject(e)});if(typeof runner[fn]!=='function'){done=true;clearTimeout(t);setLoadingStep('Fungsi backend tidak ditemui: '+fn);reject(new Error('Fungsi backend "'+fn+'" tidak wujud dalam deployment semasa.'));return}runner[fn](...args)}catch(e){if(done)return;done=true;clearTimeout(t);setLoadingStep('Ralat JavaScript semasa memanggil: '+fn);reject(e)}})}
-function setText(id,v){if($(id))$(id).textContent=v==null?'':String(v)}
-function hideScreens(){$('loadingScreen').style.display='none';$('errorScreen').style.display='none';$('unauthorizedScreen').style.display='none';$('dashboard').style.display='none'}
-function showError(e){hideScreens();setText('errorMessage',e&&e.message?e.message:String(e||'Ralat tidak diketahui.'));var detail=e&&e.detail?e.detail:(e&&e.stack?e.stack:'');setText('errorDetail',detail);if(detail)$('errorDetail').style.display='block';$('errorScreen').style.display='block'}
-function showToast(msg,type){const c=$('toastContainer');const d=document.createElement('div');d.className='toast '+(type||'');d.textContent=msg;c.appendChild(d);setTimeout(function(){d.remove()},3500)}
-function formatRole(role){const m={ADMIN:'Pentadbir Sistem',SECRETARIAT:'Urus Setia',SUPERVISOR:'Penyelia',PREPARER:'Penyedia Laporan'};return m[String(role||'').toUpperCase()]||role||'Pengguna'}
-function dateText(v){if(!v)return '-';const s=String(v);if(/^\d{2}\/\d{2}\/\d{4}/.test(s))return s;const d=new Date(s);if(isNaN(d.getTime()))return s;return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')}
-function parseDate(v){if(!v)return null;const s=String(v),m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);if(m)return new Date(+m[3],+m[2]-1,+m[1],23,59,59);const d=new Date(s);return isNaN(d.getTime())?null:d}
-function periodParts(id){const m=String(id||'').match(/^(\d{4})-(\d{2})$/);return m?{year:+m[1],month:+m[2]}:null}
-function periodLabel(p){if(!p)return '-';const x=periodParts(p.PeriodID);return x?months[x.month-1]+' '+x.year:(p.Label||p.PeriodID||'-')}
-function statusLabel(s){s=String(s||'DRAFT').toUpperCase();return s==='SUBMITTED'?'TELAH DIHANTAR':s==='CLOSED'?'DITUTUP':'DRAF'}
-function setBadge(status){const b=$('reportBadge');b.className='badge '+(status==='SUBMITTED'?'badge-submitted':status==='CLOSED'?'badge-closed':'badge-draft');b.textContent=statusLabel(status)}
-function renderHeader(user){setText('headerUserName',user.fullName||user.email||'-');setText('headerUserRole',formatRole(user.role));setText('avatar',String(user.fullName||user.email||'P').trim().charAt(0).toUpperCase());$('headerUser').style.display='flex';setText('welcomeTitle',user.fullName||user.email||'Pengguna');setText('welcomeText',String(user.role||'').toUpperCase()==='SUPERVISOR'?'Sila semak dan sahkan laporan organisasi anda.':'Sila lengkapkan laporan bulanan organisasi anda.');setText('systemEmail',user.email||'-');setText('systemRole',formatRole(user.role));setText('systemOrganisation',user.organisationName||user.organisationId||'-');setText('footerUser','Pengguna: '+(user.email||'-'));setText('footerRole','Peranan: '+formatRole(user.role));setText('footerOrg','Organisasi: '+(user.organisationName||'-'))}
-function setupPeriods(list,selected){periods=Array.isArray(list)?list:[];const years=[];periods.forEach(function(p){const x=periodParts(p.PeriodID);if(x&&years.indexOf(x.year)<0)years.push(x.year)});years.sort((a,b)=>b-a);$('yearSelect').innerHTML='';years.forEach(function(y){const o=document.createElement('option');o.value=y;o.textContent=y;$('yearSelect').appendChild(o)});const sel=periodParts(selected)||periodParts(periods[0]&&periods[0].PeriodID);if(sel){$('yearSelect').value=sel.year;populateMonths(sel.year,sel.month)}$('yearSelect').disabled=!years.length;$('monthSelect').disabled=!years.length;$('filterBtn').disabled=!years.length}
-function populateMonths(year,selected){const ms=$('monthSelect');ms.innerHTML='';periods.filter(function(p){const x=periodParts(p.PeriodID);return x&&x.year===Number(year)}).sort(function(a,b){return periodParts(a.PeriodID).month-periodParts(b.PeriodID).month}).forEach(function(p){const x=periodParts(p.PeriodID),o=document.createElement('option');o.value=String(x.month).padStart(2,'0');o.textContent=months[x.month-1];ms.appendChild(o)});if(selected)ms.value=String(selected).padStart(2,'0');if(!ms.value&&ms.options.length)ms.selectedIndex=ms.options.length-1}
-async function loadSelectedPeriod(pid){$('filterBtn').disabled=true;showToast('Memuatkan tempoh laporan...','success');try{const data=await srv('getUserDashboardByPeriod',pid);dashboardData=data;currentPeriodId=pid;renderUserDashboard(data)}catch(e){showError(e)}finally{$('filterBtn').disabled=false}}
-function renderPeriodInfo(p){setText('deadlineMonth',periodLabel(p));setText('deadlineDate',dateText(p&&p.CloseDate));const close=parseDate(p&&p.CloseDate),now=new Date();if(!close){setText('daysRemaining','-');return}const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());const end=new Date(close.getFullYear(),close.getMonth(),close.getDate(),23,59,59);const days=Math.ceil((end-today)/86400000);setText('daysRemaining',days<0?'Tamat':String(days));$('daysRemaining').style.color=days<0?'#b42333':days<=3?'#b42333':days<=7?'#a76200':'#173f6d')}
-function renderReport(data){const p=data.period||{},r=data.report;setText('organisationDescription',data.user&&data.user.organisationName?'Laporan bagi '+data.user.organisationName+'.':'Laporan organisasi anda.');setText('deadlineMonth',periodLabel(p));renderPeriodInfo(p);if(!r){$('reportContent').innerHTML='<div class="empty-report">Tiada laporan direkodkan bagi tempoh ini.</div>';$('openReportButton').disabled=true;$('reportNotice').style.display='none';setBadge('CLOSED');return}const status=String(r.Status||'DRAFT').toUpperCase();setBadge(status);const completion=Number(r.CompletionPercent||0);$('reportContent').innerHTML='<div class="report-body"><div class="report-summary"><div class="summary-item"><div class="summary-label">Status</div><div class="summary-value">'+statusLabel(status)+'</div></div><div class="summary-item"><div class="summary-label">Kemajuan</div><div class="summary-value">'+completion+'%</div><div class="progress-wrap"><div class="progress-track"><div class="progress-bar" style="width:'+Math.max(0,Math.min(100,completion))+'%"></div></div></div></div><div class="summary-item period-mini"><div class="period-mini-title">Tempoh Laporan</div><div class="period-mini-value">'+periodLabel(p)+'</div><div class="period-dates">Tarikh buka: '+dateText(p.OpenDate)+'<br>Tarikh tutup: '+dateText(p.CloseDate)+'</div></div></div></div>';$('reportNotice').style.display=status==='SUBMITTED'?'block':'block';$('openReportButton').disabled=status==='CLOSED'||!data.reportUrl;$('openReportButton').textContent=status==='SUBMITTED'?'▣  Buka / Semak Laporan  ›':'▣  Buka Borang Laporan  ›'}
-function renderAdmin(data){const u=data.user||{},isAdmin=['ADMIN','SECRETARIAT'].indexOf(String(u.role||'').toUpperCase())>=0;if(!isAdmin)return;const s=data.summary||{};$('adminSection').style.display='block';setText('statTotal',s.total||0);setText('statSubmitted',s.submitted||0);setText('statDraft',s.draft||0);setText('statPending',s.notStarted||0);const pct=Number(s.completionRate||0);$('adminProgressBar').style.width=Math.max(0,Math.min(100,pct))+'%';setText('adminProgressText',pct+'% laporan telah dihantar.')}
-function renderUserDashboard(data){hideScreens();const user=data.user||currentUser||{};renderHeader(user);renderPeriodInfo(data.period);renderReport(data);renderAdmin(data);$('dashboard').style.display='block'}
-async function init(){hideScreens();$('loadingScreen').style.display='flex';try{const health=await srv('healthCheck');if(!health||health.ok!==true){var he=new Error((health&&health.error)||'Pemeriksaan sistem gagal.');he.detail=health?'Langkah: '+(health.steps||[]).join(' → ')+'\\nSpreadsheet: '+(health.spreadsheet?health.spreadsheet.name:'-'):'Tiada respons daripada backend.';throw he}const base=await srv('getDashboardData');if(!base||base.authorized!==true){if(base){setText('unauthorizedMessage',base.message||'Akaun tidak dibenarkan.');setText('unauthorizedEmail',base.email||'-');hideScreens();$('unauthorizedScreen').style.display='block';return}throw new Error('Backend mengembalikan nilai kosong.')}currentUser=base.user||{};const role=String(currentUser.role||'').toUpperCase();if(role==='PREPARER'||role==='SUPERVISOR'){const url=await srv('getWebAppUrl');if(url){window.top.location.href=url+'?page=userdashboard';return;}throw new Error('URL sistem tidak dapat dikenal pasti.');}if(role==='ADMIN'||role==='SECRETARIAT'){setLoadingStep('Langkah 3/4 — membina paparan Pentadbir/Urus Setia...');dashboardData=base;renderHeader(currentUser);renderPeriodInfo(base.period);renderReport({user:currentUser,period:base.period,report:base.report,reportUrl:base.reportUrl});renderAdmin(base);setLoadingStep('Langkah 4/4 — dashboard siap.');$('dashboard').style.display='block';return}const list=await srv('getUserReportingPeriods');const current=base.period&&base.period.PeriodID?base.period.PeriodID:(list[0]&&list[0].PeriodID);setupPeriods(list,current);await loadSelectedPeriod(current)}catch(e){showError(e)}}
-$('yearSelect').addEventListener('change',function(){populateMonths(Number(this.value));$('filterBtn').disabled=!$('monthSelect').value});$('monthSelect').addEventListener('change',function(){$('filterBtn').disabled=!$('monthSelect').value});$('filterBtn').addEventListener('click',function(){const id=$('yearSelect').value+'-'+$('monthSelect').value;if(id)loadSelectedPeriod(id)});$('openReportButton').addEventListener('click',function(){if(dashboardData&&dashboardData.reportUrl)window.top.location.href=dashboardData.reportUrl});function openSecretariat(){srv('getWebAppUrl').then(function(url){if(url)window.top.location.href=url+'?page=secretariat'}).catch(function(e){showToast(e.message||e,'error')})}function startApp(){try{setLoadingStep('START APP — JavaScript sedang berjalan.');console.log('[CGSO] START APP, readyState='+document.readyState);setTimeout(init,50)}catch(e){console.error('[CGSO] START ERROR',e);showError(e)}}
-setTimeout(startApp,500)
+/* ============================================================
+   CGSO DASHBOARD - SIMPLE STARTUP
+   ============================================================ */
+
+var dashboardData = null;
+var currentUser = null;
+
+function el(id) {
+  return document.getElementById(id);
+}
+
+function text(id, value) {
+  var node = el(id);
+  if (node) node.textContent = value == null ? "" : String(value);
+}
+
+function showLoading(message) {
+  var node = el("loadingScreen");
+  var msg = el("loadingMessage");
+  if (node) node.style.display = "flex";
+  if (msg) msg.textContent = message;
+}
+
+function hideAllScreens() {
+  if (el("loadingScreen")) el("loadingScreen").style.display = "none";
+  if (el("errorScreen")) el("errorScreen").style.display = "none";
+  if (el("unauthorizedScreen")) el("unauthorizedScreen").style.display = "none";
+  if (el("dashboard")) el("dashboard").style.display = "none";
+}
+
+function showError(message, detail) {
+  hideAllScreens();
+  text("errorMessage", message || "Ralat tidak diketahui.");
+  text("errorDetail", detail || "");
+  if (el("errorDetail")) el("errorDetail").style.display = detail ? "block" : "none";
+  if (el("errorScreen")) el("errorScreen").style.display = "block";
+}
+
+function formatRole(role) {
+  var r = String(role || "").toUpperCase();
+  if (r === "ADMIN") return "Pentadbir Sistem";
+  if (r === "SECRETARIAT") return "Urus Setia";
+  if (r === "SUPERVISOR") return "Penyelia";
+  if (r === "PREPARER") return "Penyedia Laporan";
+  return role || "Pengguna";
+}
+
+function formatDate(value) {
+  if (!value) return "-";
+  var s = String(value);
+  var m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (m) return s;
+  var d = new Date(s);
+  if (isNaN(d.getTime())) return s;
+  return ("0" + d.getDate()).slice(-2) + "/" +
+         ("0" + (d.getMonth() + 1)).slice(-2) + "/" +
+         d.getFullYear() + " " +
+         ("0" + d.getHours()).slice(-2) + ":" +
+         ("0" + d.getMinutes()).slice(-2);
+}
+
+function periodLabel(period) {
+  if (!period) return "-";
+  if (period.Label) return period.Label;
+  var id = String(period.PeriodID || "");
+  var m = id.match(/^(\d{4})-(\d{2})$/);
+  var months = ["Januari","Februari","Mac","April","Mei","Jun",
+                "Julai","Ogos","September","Oktober","November","Disember"];
+  if (m) return months[Number(m[2]) - 1] + " " + m[1];
+  return id || "-";
+}
+
+function statusLabel(status) {
+  var s = String(status || "").toUpperCase();
+  if (s === "SUBMITTED") return "TELAH DIHANTAR";
+  if (s === "CLOSED") return "DITUTUP";
+  return "DRAF";
+}
+
+function setBadge(status) {
+  var b = el("reportBadge");
+  if (!b) return;
+  b.className = "badge " +
+    (status === "SUBMITTED" ? "badge-submitted" :
+     status === "CLOSED" ? "badge-closed" : "badge-draft");
+  b.textContent = statusLabel(status);
+}
+
+function renderDashboard(data) {
+  hideAllScreens();
+
+  currentUser = data.user || {};
+  dashboardData = data;
+
+  text("headerUserName", currentUser.fullName || currentUser.email || "-");
+  text("headerUserRole", formatRole(currentUser.role));
+  text("avatar", String(currentUser.fullName || currentUser.email || "P").charAt(0).toUpperCase());
+  text("welcomeTitle", currentUser.fullName || currentUser.email || "Pengguna");
+  text("welcomeText", "Selamat datang ke Sistem Laporan Bulanan CGSO.");
+  text("systemEmail", currentUser.email || "-");
+  text("systemRole", formatRole(currentUser.role));
+  text("systemOrganisation", currentUser.organisationName || currentUser.organisationId || "-");
+  text("footerUser", "Pengguna: " + (currentUser.email || "-"));
+  text("footerRole", "Peranan: " + formatRole(currentUser.role));
+  text("footerOrg", "Organisasi: " + (currentUser.organisationName || "-"));
+
+  if (el("headerUser")) el("headerUser").style.display = "flex";
+
+  var p = data.period || {};
+  text("deadlineMonth", periodLabel(p));
+  text("deadlineDate", formatDate(p.CloseDate));
+
+  var report = data.report;
+  if (!report) {
+    text("organisationDescription",
+      currentUser.organisationName ?
+      "Dashboard pentadbiran bagi " + currentUser.organisationName + "." :
+      "Dashboard pentadbiran sistem.");
+    if (el("reportContent")) {
+      el("reportContent").innerHTML =
+        '<div class="empty-report">Dashboard pentadbiran aktif. Sila gunakan statistik di bawah untuk menyemak laporan organisasi.</div>';
+    }
+    if (el("reportNotice")) el("reportNotice").style.display = "none";
+    if (el("openReportButton")) el("openReportButton").disabled = true;
+    setBadge("DRAFT");
+  } else {
+    var status = String(report.Status || "DRAFT").toUpperCase();
+    var completion = Number(report.CompletionPercent || 0);
+    setBadge(status);
+    text("organisationDescription",
+      currentUser.organisationName ?
+      "Laporan bagi " + currentUser.organisationName + "." :
+      "Laporan organisasi anda.");
+    if (el("reportContent")) {
+      el("reportContent").innerHTML =
+        '<div class="report-body"><div class="report-summary">' +
+        '<div class="summary-item"><div class="summary-label">Status</div>' +
+        '<div class="summary-value">' + statusLabel(status) + '</div></div>' +
+        '<div class="summary-item"><div class="summary-label">Kemajuan</div>' +
+        '<div class="summary-value">' + completion + '%</div></div>' +
+        '<div class="summary-item period-mini"><div class="period-mini-title">Tempoh Laporan</div>' +
+        '<div class="period-mini-value">' + periodLabel(p) + '</div>' +
+        '<div class="period-dates">Tarikh buka: ' + formatDate(p.OpenDate) +
+        '<br>Tarikh tutup: ' + formatDate(p.CloseDate) + '</div></div></div></div>';
+    }
+    if (el("openReportButton")) {
+      el("openReportButton").disabled = !data.reportUrl;
+      if (data.reportUrl) {
+        el("openReportButton").onclick = function() {
+          window.top.location.href = data.reportUrl;
+        };
+      }
+    }
+  }
+
+  var summary = data.summary || {};
+  if (el("adminSection")) el("adminSection").style.display = "block";
+  text("statTotal", summary.total || 0);
+  text("statSubmitted", summary.submitted || 0);
+  text("statDraft", summary.draft || 0);
+  text("statPending", summary.notStarted || 0);
+  text("adminProgressText", (summary.completionRate || 0) + "% laporan telah dihantar.");
+
+  if (el("adminProgressBar")) {
+    var pct = Number(summary.completionRate || 0);
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+    el("adminProgressBar").style.width = pct + "%";
+  }
+
+  if (el("dashboard")) el("dashboard").style.display = "block";
+}
+
+function startDashboard() {
+  showLoading("Langkah 1/3 — memulakan sistem...");
+
+  if (typeof google === "undefined" ||
+      !google.script ||
+      !google.script.run) {
+    showError("Sambungan Google Apps Script tidak tersedia.",
+              "google.script.run tidak dikesan pada halaman ini.");
+    return;
+  }
+
+  showLoading("Langkah 2/3 — mendapatkan data dashboard...");
+
+  try {
+    google.script.run
+      .withSuccessHandler(function(data) {
+        if (!data) {
+          showError("Server mengembalikan data kosong.");
+          return;
+        }
+
+        if (data.authorized !== true) {
+          hideAllScreens();
+          text("unauthorizedMessage",
+            data.message || "Akaun anda belum didaftarkan dalam sistem.");
+          text("unauthorizedEmail", data.email || "-");
+          if (el("unauthorizedScreen")) el("unauthorizedScreen").style.display = "block";
+          return;
+        }
+
+        showLoading("Langkah 3/3 — membina dashboard...");
+        renderDashboard(data);
+      })
+      .withFailureHandler(function(error) {
+        var message = error && error.message ? error.message : String(error);
+        showError("Gagal mendapatkan data dashboard.", message);
+      })
+      .getDashboardData();
+  } catch (error) {
+    showError("Ralat JavaScript.", error && error.message ? error.message : String(error));
+  }
+}
+
+function initCGSO() {
+  showLoading("JavaScript aktif — sedang memulakan sistem...");
+  setTimeout(startDashboard, 300);
+}
+
+setTimeout(initCGSO, 500);
 </script>
 </body>
 </html>
