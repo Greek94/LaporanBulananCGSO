@@ -47,6 +47,40 @@ function doGet(e) {
   try {
 
     /* ========================================================
+       SYSTEM DIAGNOSTIC
+       Boleh dibuka dengan ?page=health
+       Tidak bergantung kepada JavaScript dashboard.
+       ======================================================== */
+    if (
+      e &&
+      e.parameter &&
+      e.parameter.page === 'health'
+    ) {
+
+      const health = healthCheck();
+
+      return HtmlService
+        .createHtmlOutput(
+          '<!doctype html><html><head><meta charset="UTF-8">' +
+          '<title>CGSO System Health</title>' +
+          '<style>body{font-family:Arial,sans-serif;background:#f4f7fb;padding:30px;color:#172b4d}' +
+          '.card{max-width:900px;margin:auto;background:#fff;border-radius:14px;padding:28px;box-shadow:0 4px 18px rgba(0,0,0,.08)}' +
+          'h1{margin-top:0}.ok{color:#087f5b}.bad{color:#b42318}pre{white-space:pre-wrap;background:#f7f8fa;padding:18px;border-radius:10px;line-height:1.5}' +
+          '</style></head><body><div class="card">' +
+          '<h1>CGSO System Health Check</h1>' +
+          '<p class="' + (health.ok ? 'ok' : 'bad') + '"><b>' +
+          (health.ok ? 'SYSTEM OK' : 'SYSTEM CHECK FAILED') +
+          '</b></p><pre>' +
+          escapeHtml_(JSON.stringify(health, null, 2)) +
+          '</pre></div></body></html>'
+        )
+        .setXFrameOptionsMode(
+          HtmlService.XFrameOptionsMode.ALLOWALL
+        );
+    }
+
+
+    /* ========================================================
        DASHBOARD URUS SETIA / SECRETARIAT
        ======================================================== */
     if (
