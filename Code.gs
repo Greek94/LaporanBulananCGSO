@@ -2999,49 +2999,29 @@ function getPeriodById_(
       SHEETS.PERIODS
     );
 
-
   const values =
     sheet
       .getDataRange()
       .getValues();
 
-
-  if (
-    values.length < 2
-  ) {
+  if (values.length < 2) {
     return null;
   }
 
+  const headers = values.shift();
+  const periodIndex = headers.indexOf('PeriodID');
+  const wanted = normalizePeriodId_(periodId);
 
-  const headers =
-    values.shift();
+  if (periodIndex < 0 || !wanted) {
+    return null;
+  }
 
-
-  const idx =
-    headers.indexOf(
-      'PeriodID'
-    );
-
-
-  const row =
-    values.find(
-      function(row) {
-
-        return String(
-          row[idx]
-        ) === String(
-          periodId
-        );
-
-      }
-    );
-
+  const row = values.find(function(row) {
+    return normalizePeriodId_(row[periodIndex]) === wanted;
+  });
 
   return row
-    ? rowToObject_(
-        headers,
-        row
-      )
+    ? rowToObject_(headers, row)
     : null;
 }
 
@@ -3093,28 +3073,21 @@ function findReport_(
   organisationId
 ) {
 
+  const wantedPeriod =
+    normalizePeriodId_(periodId);
+
+  const wantedOrg =
+    String(organisationId || '').trim();
+
   return getAllReports_()
-    .find(
-      function(report) {
+    .find(function(report) {
 
-        return (
+      return (
+        normalizePeriodId_(report.PeriodID) === wantedPeriod &&
+        String(report.OrganisationID || '').trim() === wantedOrg
+      );
 
-          String(
-            report.PeriodID
-          ) === String(
-            periodId
-          ) &&
-
-          String(
-            report.OrganisationID
-          ) === String(
-            organisationId
-          )
-
-        );
-
-      }
-    ) || null;
+    }) || null;
 }
 
 
@@ -3134,105 +3107,6 @@ function findReport_(
  * - tidak mengubah ACTIVITIES
  * - tidak mencipta report baharu
  */
-function getReadOnlyReport(reportId) {
-
-  const user = getCurrentUser();
-
-  assertAuthorized_(user);
-
-  const role = String(user.role || '').trim().toUpperCase();
-
-  if (role !== 'ADMIN' && role !== 'SECRETARIAT') {
-    throw new Error(
-      'Akses hanya untuk Urus Setia / Admin.'
-    );
-  }
-
-  if (!reportId) {
-    throw new Error('ReportID tidak diterima.');
-  }
-
-  const report = getReportById_(reportId);
-
-  if (!report) {
-    throw new Error('Laporan tidak dijumpai.');
-  }
-
-  assertReportAccess_(user, report);
-
-  const period = getPeriodById_(report.PeriodID);
-
-  if (!period) {
-    throw new Error('Tempoh laporan tidak dijumpai.');
-  }
-
-  const organisation = findOrganisation_(
-    report.OrganisationID
-  ) || {};
-
-  /*
-   * Tambahkan maklumat organisasi ke objek report supaya
-   * paparan modal sentiasa mempunyai Nama Organisasi + Kod.
-   * Data asal REPORTS tidak diubah.
-   */
-  const reportForClient = Object.assign({}, report, {
-    OrganisationName:
-      organisation.OrganisationName ||
-      organisation.Name ||
-      '',
-    OrganisationCode:
-      organisation.Code ||
-      organisation.OrganisationCode ||
-      ''
-  });
-
-  const items =
-    getVisibleItemsForOrganisation_(
-      report.OrganisationID
-    ) || [];
-
-  const itemStatus =
-    getItemStatuses_(
-      reportId
-    ) || {};
-
-  const activities =
-    getActivities_(
-      reportId
-    ) || [];
-
-  /*
-   * Modul khas BKP/BKPS dibaca secara READ-ONLY jika
-   * organisasi tersebut mempunyai rekod.
-   */
-  const finance =
-    getRecordsByReportIdFromSheet_(
-      SHEETS.FINANCE,
-      reportId
-    );
-
-  const bkpsSpecial =
-    getRecordsByReportIdFromSheet_(
-      SHEETS.BKPS,
-      reportId
-    );
-
-  return safeForClient_({
-    ok: true,
-    user: user,
-    report: reportForClient,
-    period: period,
-    items: items,
-    itemStatus: itemStatus,
-    activities: activities,
-    finance: finance,
-    bkpsSpecial: bkpsSpecial,
-    editable: false,
-    readOnly: true
-  });
-}
-
-
 /**
  * Pembantu generik untuk membaca rekod berdasarkan ReportID.
  * Tidak mengubah sheet.
@@ -3283,169 +3157,6 @@ function getRecordsByReportIdFromSheet_(
    DASHBOARD URUS SETIA V2
    READ ONLY
    ============================================================ */
-
-function getSecretariatDashboardV2() {
-
-  const user = getCurrentUser();
-
-  if (!user || user.authorized !== true) {
-    return safeForClient_({
-      ok: false,
-      error: 'Pengguna tidak dibenarkan.'
-    });
-  }
-
-  const role = String(user.role || '').trim().toUpperCase();
-
-  if (role !== 'ADMIN' && role !== 'SECRETARIAT') {
-    return safeForClient_({
-      ok: false,
-      error: 'Akses hanya untuk ADMIN atau SECRETARIAT.'
-    });
-  }
-
-  const period = getCurrentOpenPeriod_();
-
-  if (!period) {
-    return safeForClient_({
-      ok: true,
-      user: user,
-      period: null,
-      summary: {
-        total: 0,
-        totalExpected: 0,
-        totalOrganisations: 0,
-        submitted: 0,
-        draft: 0,
-        closed: 0,
-        notStarted: 0,
-        completionRate: 0,
-        completionPercent: 0
-      },
-      rows: []
-    });
-  }
-
-  const organisations = getActiveOrganisations_() || [];
-  const allReports = getAllReports_() || [];
-  const wantedPeriod = normalizePeriodId_(period.PeriodID);
-
-  /* Satu report terbaik sahaja bagi setiap organisasi. */
-  const reportMap = {};
-
-  allReports.forEach(function(report) {
-
-    if (
-      normalizePeriodId_(report.PeriodID) !== wantedPeriod
-    ) {
-      return;
-    }
-
-    const orgId = String(
-      report.OrganisationID || ''
-    ).trim();
-
-    if (!orgId) {
-      return;
-    }
-
-    if (!reportMap[orgId]) {
-      reportMap[orgId] = report;
-    } else {
-      reportMap[orgId] = findBestReportRecord_([
-        reportMap[orgId],
-        report
-      ]);
-    }
-  });
-
-  let submitted = 0;
-  let draft = 0;
-  let closed = 0;
-
-  const rows = organisations.map(function(org) {
-
-    const orgId = String(
-      org.OrganisationID || ''
-    ).trim();
-
-    const report = reportMap[orgId] || null;
-
-    let status = 'NOT_STARTED';
-    let completion = 0;
-    let reportId = '';
-    let submittedAt = '';
-    let updatedAt = '';
-
-    if (report) {
-
-      status = String(
-        report.Status || 'DRAFT'
-      ).trim().toUpperCase();
-
-      completion = Number(
-        report.CompletionPercent || 0
-      );
-
-      reportId = String(
-        report.ReportID || ''
-      );
-
-      submittedAt = report.SubmittedAt || '';
-      updatedAt = report.UpdatedAt || '';
-
-      if (status === 'SUBMITTED') submitted++;
-      else if (status === 'CLOSED') closed++;
-      else if (status === 'DRAFT') draft++;
-    }
-
-    return {
-      organisationId: orgId,
-      code: org.Code || '',
-      name: org.OrganisationName || '',
-      status: status,
-      completion: Math.max(
-        0,
-        Math.min(100, completion)
-      ),
-      reportId: reportId,
-      submittedAt: submittedAt,
-      updatedAt: updatedAt
-    };
-  });
-
-  const total = organisations.length;
-  const notStarted = Math.max(
-    0,
-    total - submitted - draft - closed
-  );
-
-  const completionPercent = total
-    ? Math.round(
-        rows.reduce(function(sum, row) {
-          return sum + Number(row.completion || 0);
-        }, 0) / total
-      )
-    : 0;
-
-  return safeForClient_({
-    ok: true,
-    user: user,
-    period: period,
-    summary: {
-      total: total,
-      totalExpected: total,
-      totalOrganisations: total,
-      submitted: submitted,
-      draft: draft,
-      closed: closed,
-      notStarted: notStarted,
-      completionRate: completionPercent,
-      completionPercent: completionPercent
-    },
-    rows: rows
-  });
-}
 
 /* ============================================================
    REPORT BY ID
