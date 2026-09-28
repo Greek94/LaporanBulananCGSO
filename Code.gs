@@ -298,6 +298,81 @@ function getCurrentUser() {
 
 
 /* ============================================================
+   SYSTEM HEALTH CHECK
+   READ-ONLY - tidak mencipta/mengubah laporan.
+   ============================================================ */
+function healthCheck() {
+
+  const result = {
+    ok: false,
+    timestamp: new Date(),
+    steps: [],
+    user: null,
+    spreadsheet: null,
+    sheets: {},
+    error: ''
+  };
+
+  try {
+    result.steps.push('START');
+
+    const db = getDb_();
+    result.spreadsheet = {
+      name: db.getName(),
+      id: db.getId()
+    };
+    result.steps.push('SPREADSHEET_OK');
+
+    const required = [
+      SHEETS.CONFIG,
+      SHEETS.ORGS,
+      SHEETS.USERS,
+      SHEETS.PERIODS,
+      SHEETS.REPORTS,
+      SHEETS.ITEMS,
+      SHEETS.ACCESS,
+      SHEETS.STATUS,
+      SHEETS.ACTIVITIES
+    ];
+
+    required.forEach(function(name) {
+      const sheet = db.getSheetByName(name);
+      result.sheets[name] = !!sheet;
+      if (!sheet) {
+        throw new Error('Sheet "' + name + '" tidak dijumpai.');
+      }
+    });
+
+    result.steps.push('SHEETS_OK');
+
+    result.user = getCurrentUser();
+
+    if (!result.user || result.user.authorized !== true) {
+      result.steps.push('AUTH_FAILED');
+      result.error = result.user && result.user.message
+        ? result.user.message
+        : 'Authentication gagal.';
+      return safeForClient_(result);
+    }
+
+    result.steps.push('AUTH_OK');
+
+    const period = getCurrentOpenPeriod_();
+    result.period = period || null;
+    result.steps.push('PERIOD_OK');
+
+    result.ok = true;
+    return safeForClient_(result);
+
+  } catch (err) {
+    result.error = String(err.stack || err.message || err);
+    result.steps.push('ERROR');
+    return safeForClient_(result);
+  }
+}
+
+
+/* ============================================================
    DASHBOARD
    ============================================================ */
 
