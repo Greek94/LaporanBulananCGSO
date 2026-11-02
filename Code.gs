@@ -3765,6 +3765,12 @@ function saveAdminUser(payload) {
     if (String(row[emailCol]||'').trim().toLowerCase() === email) targetRow = index + 2;
   });
   const now = new Date();
+  const phoneCol = headers.indexOf('Phone') + 1;
+  // Phone numbers are identifiers, not quantities. Keep the column as plain text
+  // so leading zeroes (e.g. 014...) are not dropped by Google Sheets.
+  if (phoneCol > 0) {
+    sheet.getRange(1, phoneCol, Math.max(sheet.getMaxRows(), 1), 1).setNumberFormat('@');
+  }
   const output = targetRow > 0 ? sheet.getRange(targetRow,1,1,lastCol).getValues()[0] : new Array(lastCol).fill('');
   function put(field,value) { const col=headers.indexOf(field); if(col>=0) output[col]=value; }
   if (!String(output[idCol]||'').trim()) put('UserID','USR-'+Utilities.getUuid());
@@ -3774,8 +3780,15 @@ function saveAdminUser(payload) {
   const createdCol=headers.indexOf('CreatedAt');
   if(createdCol>=0 && !output[createdCol]) put('CreatedAt',now);
   put('UpdatedAt',now);
-  if(targetRow>0) sheet.getRange(targetRow,1,1,lastCol).setValues([output]);
-  else sheet.appendRow(output);
+  if(targetRow>0) {
+    // Explicitly retain text formatting on the phone cell before writing.
+    if (phoneCol > 0) sheet.getRange(targetRow, phoneCol).setNumberFormat('@');
+    sheet.getRange(targetRow,1,1,lastCol).setValues([output]);
+  } else {
+    // Format phone column as text before appending the new user row.
+    if (phoneCol > 0) sheet.getRange(sheet.getLastRow()+1, phoneCol).setNumberFormat('@');
+    sheet.appendRow(output);
+  }
   return {ok:true,message:'Profil pengguna berjaya disimpan.'};
 }
 
