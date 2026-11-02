@@ -23,7 +23,7 @@
   <header class="top-header">
     <div class="header-inner">
       <div class="brand">
-        <div class="brand-mark"><img class="brand-logo" src="https://drive.google.com/uc?export=view&amp;id=1H_VLwJxyoTuk6jLRaOMAnpAWzWcBt-WE" alt="Logo rasmi CGSO"></div>
+        <div class="brand-mark"><img class="brand-logo" src="https://drive.google.com/thumbnail?id=1H_VLwJxyoTuk6jLRaOMAnpAWzWcBt-WE&amp;sz=w400" alt="Logo rasmi CGSO"></div>
         <div><div class="brand-title">SISTEM LAPORAN BULANAN CGSO</div><div class="brand-subtitle">Pejabat Ketua Pegawai Keselamatan Kerajaan Malaysia (CGSO)</div></div>
       </div>
       <div class="user-panel" id="headerUser" style="display:none"><div class="avatar" id="avatar">-</div><div><div class="user-name" id="headerUserName">-</div><div class="user-role" id="headerUserRole">-</div></div></div>
@@ -306,66 +306,69 @@ function populatePeriodSelectors(list, selectedId) {
   var months = ["Januari","Februari","Mac","April","Mei","Jun","Julai","Ogos","September","Oktober","November","Disember"];
   var periods = Array.isArray(list) ? list : [];
   var years = [];
+
   periods.forEach(function(p) {
-    var m = String(p.PeriodID || "").match(/^(\d{4})-(\d{2})$/);
-    if (m && years.indexOf(Number(m[1])) < 0) years.push(Number(m[1]));
+    var match = String(p.PeriodID || "").match(/^(\\d{4})-(\\d{2})$/);
+    if (match && years.indexOf(Number(match[1])) < 0) years.push(Number(match[1]));
   });
-  years.sort(function(a,b){ return b-a; });
+  years.sort(function(a,b) { return b-a; });
 
   var ys = el("yearSelect");
   var ms = el("monthSelect");
   var fb = el("filterBtn");
   if (!ys || !ms || !fb) return;
 
-  /* Aktifkan kawalan selepas senarai tempoh diterima. */
   ys.disabled = false;
   ms.disabled = false;
-
   ys.innerHTML = "";
-  years.forEach(function(y) {
-    var o = document.createElement("option");
-    o.value = y;
-    o.textContent = y;
-    ys.appendChild(o);
+  ms.innerHTML = "";
+
+  if (!years.length) years.push(new Date().getFullYear());
+
+  years.forEach(function(year) {
+    var option = document.createElement("option");
+    option.value = String(year);
+    option.textContent = String(year);
+    ys.appendChild(option);
   });
 
   var selected = String(selectedId || "");
-  var sm = selected.match(/^(\d{4})-(\d{2})$/);
-  var selectedYear = sm ? Number(sm[1]) : (years[0] || new Date().getFullYear());
-  var selectedMonth = sm ? Number(sm[2]) : null;
+  var selectedParts = selected.match(/^(\\d{4})-(\\d{2})$/);
+  var selectedYear = selectedParts ? Number(selectedParts[1]) : years[0];
+  var selectedMonth = selectedParts ? Number(selectedParts[2]) : (new Date().getMonth() + 1);
 
-  if (years.length) ys.value = selectedYear;
+  if (years.indexOf(selectedYear) < 0) selectedYear = years[0];
+  ys.value = String(selectedYear);
 
   function fillMonths() {
     ms.innerHTML = "";
-    var year = Number(ys.value);
-    periods.forEach(function(p) {
-      var m = String(p.PeriodID || "").match(/^(\d{4})-(\d{2})$/);
-      if (!m || Number(m[1]) !== year) return;
-      var o = document.createElement("option");
-      o.value = m[2];
-      o.textContent = months[Number(m[2]) - 1];
-      ms.appendChild(o);
+    months.forEach(function(name, index) {
+      var option = document.createElement("option");
+      option.value = String(index + 1).padStart(2, "0");
+      option.textContent = name;
+      ms.appendChild(option);
     });
-    if (selectedMonth && year === selectedYear) {
-      ms.value = String(selectedMonth).padStart(2,"0");
+
+    var monthToSelect = selectedMonth;
+    if (Number(ys.value) !== selectedYear) {
+      monthToSelect = new Date().getMonth() + 1;
     }
-    if (!ms.value && ms.options.length) ms.selectedIndex = 0;
-    fb.disabled = !ms.value;
+    ms.value = String(monthToSelect).padStart(2, "0");
+    fb.disabled = !ys.value || !ms.value;
   }
 
   ys.onchange = function() {
-    selectedMonth = null;
+    selectedYear = Number(ys.value);
     fillMonths();
   };
 
   ms.onchange = function() {
-    fb.disabled = !ms.value;
+    fb.disabled = !ys.value || !ms.value;
   };
 
   fb.onclick = function() {
     var pid = String(ys.value || "") + "-" + String(ms.value || "");
-    if (!/^\d{4}-\d{2}$/.test(pid)) return;
+    if (!/^\\d{4}-\\d{2}$/.test(pid)) return;
 
     fb.disabled = true;
     showLoading("Memuatkan laporan bagi " + pid + "...");
@@ -389,7 +392,6 @@ function populatePeriodSelectors(list, selectedId) {
 
   fillMonths();
 }
-
 function renderAdminPeriod(data) {
   var p = data.period || {};
   var s = data.summary || {};
