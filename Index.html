@@ -93,7 +93,7 @@
       <label>E-mel CGSO<input id="userEmail" type="email" placeholder="nama@cgso.gov.my" style="display:block;width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd8e7;border-radius:8px"></label>
       <label>No. telefon<input id="userPhone" style="display:block;width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd8e7;border-radius:8px"></label>
       <label>Organisasi<select id="userOrganisation" style="display:block;width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd8e7;border-radius:8px"></select></label>
-      <label>Peranan<select id="userRole" style="display:block;width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd8e7;border-radius:8px"><option>PREPARER</option><option>SUPERVISOR</option><option>SECRETARIAT</option><option>ADMIN</option></select></label>
+      <div><label>Peranan (boleh pilih lebih daripada satu)</label><div id="userRolesChecks" style="display:flex;flex-wrap:wrap;gap:12px;padding:10px;border:1px solid #cbd8e7;border-radius:8px;background:#fff"><label><input type="checkbox" value="PREPARER"> PREPARER</label><label><input type="checkbox" value="SUPERVISOR"> SUPERVISOR</label><label><input type="checkbox" value="SECRETARIAT"> SECRETARIAT</label><label><input type="checkbox" value="ADMIN"> ADMIN</label></div></div>
       <label>Status<select id="userStatus" style="display:block;width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd8e7;border-radius:8px"><option>ACTIVE</option><option>INACTIVE</option></select></label>
     </div>
     <div style="display:flex;gap:10px;margin-top:16px"><button class="primary-btn" id="saveManagedUserButton" onclick="saveManagedUser()">Simpan Profil</button><button class="secondary-btn" onclick="clearManagedUserForm()">Kosongkan</button></div>
@@ -569,7 +569,7 @@ function renderManagedUsers(){
   tbody.innerHTML=((userManagementData&&userManagementData.users)||[]).map(function(u){
     var org=orgs.find(function(o){return o.organisationId===u.organisationId;});
     var orgLabel=org?org.code:(u.organisationId||'—');
-    return '<tr style="border-top:1px solid #e5edf5"><td style="padding:10px">'+userHtmlSafe(u.fullName)+'</td><td style="padding:10px">'+userHtmlSafe(u.email)+'</td><td style="padding:10px;white-space:nowrap">'+userHtmlSafe(u.phone||'—')+'</td><td style="padding:10px">'+userHtmlSafe(orgLabel)+'</td><td style="padding:10px">'+userHtmlSafe(u.role)+'</td><td style="padding:10px">'+userHtmlSafe(u.status)+'</td><td style="padding:10px"><button class="secondary-btn" onclick="editManagedUser(\''+userHtmlSafe(u.userId)+'\')">Edit</button></td></tr>';
+    return '<tr style="border-top:1px solid #e5edf5"><td style="padding:10px">'+userHtmlSafe(u.fullName)+'</td><td style="padding:10px">'+userHtmlSafe(u.email)+'</td><td style="padding:10px;white-space:nowrap">'+userHtmlSafe(u.phone||'—')+'</td><td style="padding:10px">'+userHtmlSafe(orgLabel)+'</td><td style="padding:10px">'+userHtmlSafe((u.roles||[u.role]).join(', '))+'</td><td style="padding:10px">'+userHtmlSafe(u.status)+'</td><td style="padding:10px"><button class="secondary-btn" onclick="editManagedUser(\''+userHtmlSafe(u.userId)+'\')">Edit</button></td></tr>';
   }).join('');
 }
 function editManagedUser(userId){
@@ -577,17 +577,26 @@ function editManagedUser(userId){
   if(!u)return;
   el('editUserId').value=u.userId;el('userFullName').value=u.fullName||'';
   el('userEmail').value=u.email||'';el('userPhone').value=u.phone||'';
-  el('userOrganisation').value=u.organisationId||'';el('userRole').value=u.role||'PREPARER';
+  el('userOrganisation').value=u.organisationId||'';setManagedUserRoles(u.roles||[u.role||'PREPARER']);
   el('userStatus').value=u.status||'ACTIVE';
+}
+function getManagedUserRoles(){
+  var root=el('userRolesChecks');if(!root)return [];
+  return Array.prototype.slice.call(root.querySelectorAll('input[type="checkbox"]:checked')).map(function(x){return x.value;});
+}
+function setManagedUserRoles(roles){
+  var root=el('userRolesChecks');if(!root)return;
+  var selected=Array.isArray(roles)?roles:[];
+  Array.prototype.forEach.call(root.querySelectorAll('input[type="checkbox"]'),function(x){x.checked=selected.indexOf(x.value)>=0;});
 }
 function clearManagedUserForm(){
   ['editUserId','userFullName','userEmail','userPhone'].forEach(function(id){el(id).value='';});
-  el('userOrganisation').value='';el('userRole').value='PREPARER';el('userStatus').value='ACTIVE';
+  el('userOrganisation').value='';setManagedUserRoles(['PREPARER']);el('userStatus').value='ACTIVE';
 }
 function saveManagedUser(){
   var payload={userId:el('editUserId').value,email:el('userEmail').value,
     fullName:el('userFullName').value,phone:el('userPhone').value,
-    organisationId:el('userOrganisation').value,role:el('userRole').value,status:el('userStatus').value};
+    organisationId:el('userOrganisation').value,roles:getManagedUserRoles(),status:el('userStatus').value};
   text('usersMessage','');
   setUsersLoading(true, 'Menyimpan profil pengguna...');
   google.script.run.withSuccessHandler(function(result){
