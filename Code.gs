@@ -3683,6 +3683,102 @@ function getPeriodSummary_(
    EMAIL
    ============================================================ */
 
+/* ============================================================
+   ADMIN USER MANAGEMENT
+   ============================================================ */
+function assertAdminUserManagement_() {
+  const current = getCurrentUser();
+  assertAuthorized_(current);
+  if (String(current.role || '').toUpperCase() !== 'ADMIN') {
+    throw new Error('Fungsi pengurusan pengguna hanya untuk ADMIN.');
+  }
+  return current;
+}
+
+function getAdminUserManagementData() {
+  assertAdminUserManagement_();
+  const userSheet = getRequiredSheet_(SHEETS.USERS);
+  const values = userSheet.getDataRange().getValues();
+  const headers = values.length ? values[0].map(String) : [];
+  const users = values.slice(1).filter(function(row) {
+    return row.some(function(value) { return String(value || '').trim() !== ''; });
+  }).map(function(row) {
+    const obj = rowToObject_(headers, row);
+    return {userId:String(obj.UserID||''), email:String(obj.Email||''),
+      fullName:String(obj.FullName||''), phone:String(obj.Phone||''),
+      organisationId:String(obj.OrganisationID||''),
+      role:String(obj.Role||'').toUpperCase(), status:String(obj.Status||'').toUpperCase()};
+  });
+  const organisations = getActiveOrganisations_().map(function(org) {
+    return {organisationId:String(org.OrganisationID||''), code:String(org.Code||''),
+      name:String(org.OrganisationName||'')};
+  });
+  return safeForClient_({ok:true, users:users, organisations:organisations,
+    roles:['PREPARER','SUPERVISOR','SECRETARIAT','ADMIN']});
+}
+
+function saveAdminUser(payload) {
+  assertAdminUserManagement_();
+  payload = payload || {};
+  const email = String(payload.email || '').trim().toLowerCase();
+  const fullName = String(payload.fullName || '').trim();
+  const phone = String(payload.phone || '').trim();
+  const organisationId = String(payload.organisationId || '').trim();
+  const role = String(payload.role || '').trim().toUpperCase();
+  const status = String(payload.status || 'ACTIVE').trim().toUpperCase();
+  const userId = String(payload.userId || '').trim();
+
+  if (!email || !/^[^\s@]+@cgso\.gov\.my$/i.test(email))
+    throw new Error('E-mel pengguna mesti menggunakan domain @cgso.gov.my.');
+  if (!fullName) throw new Error('Nama penuh wajib diisi.');
+  if (!['PREPARER','SUPERVISOR','SECRETARIAT','ADMIN'].includes(role))
+    throw new Error('Peranan tidak sah.');
+  if (!['ACTIVE','INACTIVE'].includes(status)) throw new Error('Status pengguna tidak sah.');
+  if (['PREPARER','SUPERVISOR'].includes(role)) {
+    const org = findOrganisation_(organisationId);
+    if (!org || String(org.IsActive).toUpperCase() !== 'TRUE')
+      throw new Error('Pilih organisasi aktif yang sah.');
+  } else if (organisationId && organisationId !== 'SYSTEM') {
+    const org = findOrganisation_(organisationId);
+    if (!org || String(org.IsActive).toUpperCase() !== 'TRUE')
+      throw new Error('Organisasi yang dipilih tidak sah.');
+  }
+
+  const sheet = getRequiredSheet_(SHEETS.USERS);
+  let lastCol = Math.max(1, sheet.getLastColumn());
+  let headers = sheet.getRange(1,1,1,lastCol).getValues()[0].map(function(v){return String(v||'').trim();});
+  if (headers.indexOf('Phone') < 0) {
+    headers.push('Phone');
+    sheet.getRange(1,headers.length).setValue('Phone');
+    lastCol = headers.length;
+  }
+  const emailCol = headers.indexOf('Email'), idCol = headers.indexOf('UserID');
+  if (emailCol < 0 || idCol < 0) throw new Error('Struktur USERS tidak lengkap.');
+  const rows = sheet.getLastRow() > 1 ? sheet.getRange(2,1,sheet.getLastRow()-1,lastCol).getValues() : [];
+  let targetRow = -1;
+  rows.forEach(function(row,index) {
+    if ((userId && String(row[idCol]||'').trim() === userId) ||
+        (!userId && String(row[emailCol]||'').trim().toLowerCase() === email))
+      targetRow = index + 2;
+  });
+  if (targetRow < 0) rows.forEach(function(row,index) {
+    if (String(row[emailCol]||'').trim().toLowerCase() === email) targetRow = index + 2;
+  });
+  const now = new Date();
+  const output = targetRow > 0 ? sheet.getRange(targetRow,1,1,lastCol).getValues()[0] : new Array(lastCol).fill('');
+  function put(field,value) { const col=headers.indexOf(field); if(col>=0) output[col]=value; }
+  if (!String(output[idCol]||'').trim()) put('UserID','USR-'+Utilities.getUuid());
+  put('Email',email); put('FullName',fullName); put('Phone',phone);
+  put('OrganisationID',organisationId || (['ADMIN','SECRETARIAT'].includes(role) ? 'SYSTEM' : ''));
+  put('Role',role); put('Status',status);
+  const createdCol=headers.indexOf('CreatedAt');
+  if(createdCol>=0 && !output[createdCol]) put('CreatedAt',now);
+  put('UpdatedAt',now);
+  if(targetRow>0) sheet.getRange(targetRow,1,1,lastCol).setValues([output]);
+  else sheet.appendRow(output);
+  return {ok:true,message:'Profil pengguna berjaya disimpan.'};
+}
+
 function getActiveUsersByOrganisation_(
   organisationId
 ) {
