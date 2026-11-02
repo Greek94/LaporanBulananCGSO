@@ -530,7 +530,7 @@ function userHtmlSafe(value) {
 }
 function openUserManagement() {
   if (!currentUser || String(currentUser.role||'').toUpperCase() !== 'ADMIN') {
-    showToast('Akses pengurusan pengguna hanya untuk ADMIN.','error'); return;
+    alert('Akses pengurusan pengguna hanya untuk ADMIN.'); return;
   }
   el('usersModal').style.display='block';
   text('usersMessage','Memuatkan senarai pengguna...');
