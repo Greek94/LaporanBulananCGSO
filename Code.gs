@@ -294,6 +294,9 @@ function getCurrentUser() {
           .trim()
           .toUpperCase(),
 
+      roles:
+        getAssignedRoles_(user.UserID || '', user.Role),
+
       organisationId:
         user.OrganisationID || '',
 
@@ -3686,6 +3689,41 @@ function getPeriodSummary_(
 /* ============================================================
    ADMIN USER MANAGEMENT
    ============================================================ */
+function getUserRolesSheet_() {
+  const db = getDb_();
+  let sheet = db.getSheetByName('USER_ROLES');
+  if (!sheet) {
+    sheet = db.insertSheet('USER_ROLES');
+    sheet.getRange(1,1,1,5).setValues([['UserID','Role','IsActive','AssignedAt','AssignedBy']]);
+  } else if (sheet.getLastRow() === 0) {
+    sheet.getRange(1,1,1,5).setValues([['UserID','Role','IsActive','AssignedAt','AssignedBy']]);
+  }
+  return sheet;
+}
+
+function getAssignedRoles_(userId, legacyRole) {
+  const fallback = String(legacyRole || '').trim().toUpperCase();
+  if (!userId) return fallback ? [fallback] : [];
+  const sheet = getUserRolesSheet_();
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) return fallback ? [fallback] : [];
+  const headers = values[0].map(String);
+  const userIndex = headers.indexOf('UserID');
+  const roleIndex = headers.indexOf('Role');
+  const activeIndex = headers.indexOf('IsActive');
+  if (userIndex < 0 || roleIndex < 0 || activeIndex < 0) return fallback ? [fallback] : [];
+  const roles = [];
+  values.slice(1).forEach(function(row) {
+    if (String(row[userIndex] || '').trim() !== String(userId)) return;
+    const active = String(row[activeIndex] || '').trim().toUpperCase();
+    const role = String(row[roleIndex] || '').trim().toUpperCase();
+    if ((active === 'TRUE' || active === 'ACTIVE' || active === '1') &&
+        ['PREPARER','SUPERVISOR','SECRETARIAT','ADMIN'].indexOf(role) >= 0 &&
+        roles.indexOf(role) < 0) roles.push(role);
+  });
+  return roles.length ? roles : (fallback ? [fallback] : []);
+}
+
 function assertAdminUserManagement_() {
   const current = getCurrentUser();
   assertAuthorized_(current);
@@ -3704,10 +3742,12 @@ function getAdminUserManagementData() {
     return row.some(function(value) { return String(value || '').trim() !== ''; });
   }).map(function(row) {
     const obj = rowToObject_(headers, row);
+    const roles = getAssignedRoles_(String(obj.UserID || ''), obj.Role);
     return {userId:String(obj.UserID||''), email:String(obj.Email||''),
       fullName:String(obj.FullName||''), phone:String(obj.Phone||''),
       organisationId:String(obj.OrganisationID||''),
-      role:String(obj.Role||'').toUpperCase(), status:String(obj.Status||'').toUpperCase()};
+      role:String(obj.Role||'').toUpperCase(), roles:roles,
+      status:String(obj.Status||'').toUpperCase()};
   });
   const organisations = getActiveOrganisations_().map(function(org) {
     return {organisationId:String(org.OrganisationID||''), code:String(org.Code||''),
@@ -3724,20 +3764,21 @@ function saveAdminUser(payload) {
   const fullName = String(payload.fullName || '').trim();
   const phone = String(payload.phone || '').trim();
   const organisationId = String(payload.organisationId || '').trim();
-  const role = String(payload.role || '').trim().toUpperCase();
   const status = String(payload.status || 'ACTIVE').trim().toUpperCase();
   const userId = String(payload.userId || '').trim();
+  const allowedRoles = ['PREPARER','SUPERVISOR','SECRETARIAT','ADMIN'];
+  let roles = Array.isArray(payload.roles) ? payload.roles : (payload.role ? [payload.role] : []);
+  roles = roles.map(function(role){return String(role||'').trim().toUpperCase();})
+    .filter(function(role,index,list){return allowedRoles.indexOf(role)>=0 && list.indexOf(role)===index;});
 
   if (!email || !/^[^\s@]+@cgso\.gov\.my$/i.test(email))
     throw new Error('E-mel pengguna mesti menggunakan domain @cgso.gov.my.');
   if (!fullName) throw new Error('Nama penuh wajib diisi.');
-  if (!['PREPARER','SUPERVISOR','SECRETARIAT','ADMIN'].includes(role))
-    throw new Error('Peranan tidak sah.');
   if (!['ACTIVE','INACTIVE'].includes(status)) throw new Error('Status pengguna tidak sah.');
-  if (['PREPARER','SUPERVISOR'].includes(role)) {
+  if (roles.indexOf('PREPARER') >= 0 || roles.indexOf('SUPERVISOR') >= 0) {
     const org = findOrganisation_(organisationId);
     if (!org || String(org.IsActive).toUpperCase() !== 'TRUE')
-      throw new Error('Pilih organisasi aktif yang sah.');
+      throw new Error('Pilih organisasi aktif yang sah untuk PREPARER atau SUPERVISOR.');
   } else if (organisationId && organisationId !== 'SYSTEM') {
     const org = findOrganisation_(organisationId);
     if (!org || String(org.IsActive).toUpperCase() !== 'TRUE')
@@ -3766,30 +3807,41 @@ function saveAdminUser(payload) {
   });
   const now = new Date();
   const phoneCol = headers.indexOf('Phone') + 1;
-  // Phone numbers are identifiers, not quantities. Keep the column as plain text
-  // so leading zeroes (e.g. 014...) are not dropped by Google Sheets.
-  if (phoneCol > 0) {
-    sheet.getRange(1, phoneCol, Math.max(sheet.getMaxRows(), 1), 1).setNumberFormat('@');
-  }
+  if (phoneCol > 0) sheet.getRange(1, phoneCol, Math.max(sheet.getMaxRows(), 1), 1).setNumberFormat('@');
   const output = targetRow > 0 ? sheet.getRange(targetRow,1,1,lastCol).getValues()[0] : new Array(lastCol).fill('');
   function put(field,value) { const col=headers.indexOf(field); if(col>=0) output[col]=value; }
   if (!String(output[idCol]||'').trim()) put('UserID','USR-'+Utilities.getUuid());
+  const finalUserId = String(output[idCol] || '').trim();
   put('Email',email); put('FullName',fullName); put('Phone',phone);
-  put('OrganisationID',organisationId || (['ADMIN','SECRETARIAT'].includes(role) ? 'SYSTEM' : ''));
-  put('Role',role); put('Status',status);
+  put('OrganisationID',organisationId || (roles.some(function(r){return r==='ADMIN'||r==='SECRETARIAT';}) ? 'SYSTEM' : ''));
+  put('Role',roles[0] || ''); put('Status',status);
   const createdCol=headers.indexOf('CreatedAt');
   if(createdCol>=0 && !output[createdCol]) put('CreatedAt',now);
   put('UpdatedAt',now);
   if(targetRow>0) {
-    // Explicitly retain text formatting on the phone cell before writing.
     if (phoneCol > 0) sheet.getRange(targetRow, phoneCol).setNumberFormat('@');
     sheet.getRange(targetRow,1,1,lastCol).setValues([output]);
   } else {
-    // Format phone column as text before appending the new user row.
     if (phoneCol > 0) sheet.getRange(sheet.getLastRow()+1, phoneCol).setNumberFormat('@');
     sheet.appendRow(output);
   }
-  return {ok:true,message:'Profil pengguna berjaya disimpan.'};
+
+  const roleSheet = getUserRolesSheet_();
+  const roleValues = roleSheet.getDataRange().getValues();
+  const roleHeaders = roleValues[0].map(String);
+  const userIndex = roleHeaders.indexOf('UserID');
+  const activeIndex = roleHeaders.indexOf('IsActive');
+  for (let i=1;i<roleValues.length;i++) {
+    if (String(roleValues[i][userIndex] || '').trim() === finalUserId) {
+      roleSheet.getRange(i+1,activeIndex+1).setValue(false);
+    }
+  }
+  const assignedBy = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
+  if (roles.length) {
+    const appendRows = roles.map(function(role){return [finalUserId,role,true,now,assignedBy];});
+    roleSheet.getRange(roleSheet.getLastRow()+1,1,appendRows.length,5).setValues(appendRows);
+  }
+  return {ok:true,message:'Profil pengguna dan peranan berjaya disimpan.'};
 }
 
 function getActiveUsersByOrganisation_(
