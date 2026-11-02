@@ -786,6 +786,60 @@ function ensureCurrentReportingCycle_() {
 
 
 /* ============================================================
+   USER REPORTING PERIOD LIST
+   Read-only list for month/year filters.
+   ============================================================ */
+
+function getUserReportingPeriods() {
+  const user = getCurrentUser();
+
+  if (!user || user.authorized !== true) {
+    throw new Error('Akses tidak dibenarkan.');
+  }
+
+  const sheet = getRequiredSheet_(SHEETS.PERIODS);
+  const values = sheet.getDataRange().getValues();
+
+  if (values.length < 2) return [];
+
+  const headers = values.shift();
+  const periodIndex = headers.indexOf('PeriodID');
+  if (periodIndex < 0) {
+    throw new Error('Kolum PeriodID tidak dijumpai dalam REPORT_PERIODS.');
+  }
+
+  const rows = values.map(function(row) {
+    const period = rowToObject_(headers, row);
+    const periodId = normalizePeriodId_(row[periodIndex]);
+    if (!periodId || !/^\\d{4}-\\d{2}$/.test(periodId)) return null;
+
+    const parts = periodId.split('-');
+    const year = Number(parts[0]);
+    const monthNumber = Number(parts[1]);
+    const monthNames = ['Januari','Februari','Mac','April','Mei','Jun',
+      'Julai','Ogos','September','Oktober','November','Disember'];
+
+    return {
+      PeriodID: periodId,
+      Month: monthNames[monthNumber - 1] || String(period.Month || ''),
+      Year: year,
+      Label: (monthNames[monthNumber - 1] || String(period.Month || '')) + ' ' + year,
+      OpenDate: safeForClient_(period.OpenDate),
+      CloseDate: safeForClient_(period.CloseDate),
+      Status: String(period.Status || '').trim().toUpperCase()
+    };
+  }).filter(Boolean);
+
+  const unique = {};
+  rows.forEach(function(period) { unique[period.PeriodID] = period; });
+
+  return Object.keys(unique).sort().reverse().map(function(id) {
+    return unique[id];
+  });
+}
+
+
+/* ============================================================
    CREATE / GET CURRENT PERIOD
    ============================================================ */
 
