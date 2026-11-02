@@ -72,13 +72,34 @@
         </div>
       </div>
 
-      <section id="adminSection" class="admin-section" style="margin-top:20px"><div class="side-card"><div class="side-title">▤ Ringkasan Status Laporan</div><div class="admin-grid"><div class="admin-stat"><div class="admin-stat-label">Jumlah Organisasi</div><div class="admin-stat-value" id="statTotal">0</div></div><div class="admin-stat"><div class="admin-stat-label">Telah Dihantar</div><div class="admin-stat-value" id="statSubmitted">0</div></div><div class="admin-stat"><div class="admin-stat-label">Dalam Draf</div><div class="admin-stat-value" id="statDraft">0</div></div><div class="admin-stat"><div class="admin-stat-label">Belum Mula</div><div class="admin-stat-value" id="statPending">0</div></div></div><div class="admin-progress"><div class="progress-track"><div id="adminProgressBar" class="progress-bar"></div></div><div id="adminProgressText" class="admin-progress-text">0% laporan telah dihantar.</div></div><button class="primary-btn" style="margin-top:15px;padding:0 18px" onclick="openSecretariat()">Dashboard Urus Setia</button></div></section>
+      <section id="adminSection" class="admin-section" style="margin-top:20px"><div class="side-card"><div class="side-title">▤ Ringkasan Status Laporan</div><div class="admin-grid"><div class="admin-stat"><div class="admin-stat-label">Jumlah Organisasi</div><div class="admin-stat-value" id="statTotal">0</div></div><div class="admin-stat"><div class="admin-stat-label">Telah Dihantar</div><div class="admin-stat-value" id="statSubmitted">0</div></div><div class="admin-stat"><div class="admin-stat-label">Dalam Draf</div><div class="admin-stat-value" id="statDraft">0</div></div><div class="admin-stat"><div class="admin-stat-label">Belum Mula</div><div class="admin-stat-value" id="statPending">0</div></div></div><div class="admin-progress"><div class="progress-track"><div id="adminProgressBar" class="progress-bar"></div></div><div id="adminProgressText" class="admin-progress-text">0% laporan telah dihantar.</div></div><button class="primary-btn" style="margin-top:15px;padding:0 18px" onclick="openSecretariat()">Dashboard Urus Setia</button><button id="manageUsersBtn" class="primary-btn" style="margin:15px 0 0 10px;padding:0 18px;display:none;background:#173b63" onclick="openUserManagement()">Pengurusan Pengguna</button></div></section>
 
     </section>
   </main>
 
   <footer class="footer"><div class="footer-inner"><div class="footer-group"><span>✉ Sistem Laporan Bulanan CGSO</span><span id="footerUser">Pengguna</span><span id="footerRole">Penyedia Laporan</span><span id="footerOrg">Organisasi</span></div><span>Bersama Memperkukuh Keselamatan Negara</span></div></footer>
-  <div id="toastContainer" class="toast-container"></div>
+  <div id="usersModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(10,25,45,.58);padding:24px;overflow:auto">
+  <div style="max-width:1050px;margin:24px auto;background:#fff;border-radius:16px;padding:24px;box-shadow:0 18px 50px rgba(0,0,0,.2)">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><h2 style="margin:0;color:#173b63">Pengurusan Pengguna</h2><button onclick="closeUserManagement()" class="secondary-btn">Tutup ✕</button></div>
+    <p style="color:#61758d">Urus profil, organisasi, peranan dan status akaun CGSO.</p>
+    <div id="usersMessage" style="margin:10px 0;color:#b42318"></div>
+    <div style="overflow:auto;max-height:300px;border:1px solid #dce6f2;border-radius:10px;margin:12px 0">
+      <table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr style="background:#f2f7fc;text-align:left"><th style="padding:10px">Nama</th><th style="padding:10px">E-mel</th><th style="padding:10px">Organisasi</th><th style="padding:10px">Peranan</th><th style="padding:10px">Status</th><th style="padding:10px">Tindakan</th></tr></thead><tbody id="usersTableBody"></tbody></table>
+    </div>
+    <h3 style="color:#173b63">Tambah / Kemaskini Pengguna</h3>
+    <input type="hidden" id="editUserId">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+      <label>Nama penuh<input id="userFullName" style="display:block;width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd8e7;border-radius:8px"></label>
+      <label>E-mel CGSO<input id="userEmail" type="email" placeholder="nama@cgso.gov.my" style="display:block;width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd8e7;border-radius:8px"></label>
+      <label>No. telefon<input id="userPhone" style="display:block;width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd8e7;border-radius:8px"></label>
+      <label>Organisasi<select id="userOrganisation" style="display:block;width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd8e7;border-radius:8px"></select></label>
+      <label>Peranan<select id="userRole" style="display:block;width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd8e7;border-radius:8px"><option>PREPARER</option><option>SUPERVISOR</option><option>SECRETARIAT</option><option>ADMIN</option></select></label>
+      <label>Status<select id="userStatus" style="display:block;width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd8e7;border-radius:8px"><option>ACTIVE</option><option>INACTIVE</option></select></label>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:16px"><button class="primary-btn" onclick="saveManagedUser()">Simpan Profil</button><button class="secondary-btn" onclick="clearManagedUserForm()">Kosongkan</button></div>
+  </div>
+</div>
+<div id="toastContainer" class="toast-container"></div>
 </div>
 
 <script>
@@ -298,6 +319,7 @@ function renderDashboard(data) {
     el("adminProgressBar").style.width = pct + "%";
   }
 
+  if (el("manageUsersBtn")) el("manageUsersBtn").style.display = String(currentUser.role||"").toUpperCase()==="ADMIN" ? "inline-block" : "none";
   if (el("dashboard")) el("dashboard").style.display = "block";
 }
 
@@ -494,6 +516,70 @@ function startDashboard() {
   } catch (error) {
     showError("Ralat JavaScript.", error && error.message ? error.message : String(error));
   }
+}
+
+
+// ============================================================
+// ADMIN USER MANAGEMENT UI
+// ============================================================
+var userManagementData = null;
+function userHtmlSafe(value) {
+  return String(value == null ? '' : value).replace(/[&<>"']/g,function(ch){
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]);
+  });
+}
+function openUserManagement() {
+  if (!currentUser || String(currentUser.role||'').toUpperCase() !== 'ADMIN') {
+    showToast('Akses pengurusan pengguna hanya untuk ADMIN.','error'); return;
+  }
+  el('usersModal').style.display='block';
+  text('usersMessage','Memuatkan senarai pengguna...');
+  google.script.run.withSuccessHandler(function(result){
+    userManagementData=result||{};
+    if (!result || result.ok!==true) { text('usersMessage','Data pengguna tidak dapat dimuatkan.'); return; }
+    text('usersMessage','');
+    var orgSelect=el('userOrganisation');
+    orgSelect.innerHTML='<option value="">-- Pilih organisasi --</option>'+
+      (result.organisations||[]).map(function(org){
+        return '<option value="'+userHtmlSafe(org.organisationId)+'">'+userHtmlSafe(org.code+' — '+org.name)+'</option>';
+      }).join('')+'<option value="SYSTEM">SYSTEM — Urus Setia / Pentadbir</option>';
+    renderManagedUsers();
+    clearManagedUserForm();
+  }).withFailureHandler(function(err){text('usersMessage',err&&err.message?err.message:String(err));})
+    .getAdminUserManagementData();
+}
+function closeUserManagement(){if(el('usersModal'))el('usersModal').style.display='none';}
+function renderManagedUsers(){
+  var tbody=el('usersTableBody'); if(!tbody)return;
+  var orgs=(userManagementData&&userManagementData.organisations)||[];
+  tbody.innerHTML=((userManagementData&&userManagementData.users)||[]).map(function(u){
+    var org=orgs.find(function(o){return o.organisationId===u.organisationId;});
+    var orgLabel=org?org.code:(u.organisationId||'—');
+    return '<tr style="border-top:1px solid #e5edf5"><td style="padding:10px">'+userHtmlSafe(u.fullName)+'</td><td style="padding:10px">'+userHtmlSafe(u.email)+'</td><td style="padding:10px">'+userHtmlSafe(orgLabel)+'</td><td style="padding:10px">'+userHtmlSafe(u.role)+'</td><td style="padding:10px">'+userHtmlSafe(u.status)+'</td><td style="padding:10px"><button class="secondary-btn" onclick="editManagedUser(\''+userHtmlSafe(u.userId)+'\')">Edit</button></td></tr>';
+  }).join('');
+}
+function editManagedUser(userId){
+  var u=((userManagementData&&userManagementData.users)||[]).find(function(x){return x.userId===userId;});
+  if(!u)return;
+  el('editUserId').value=u.userId;el('userFullName').value=u.fullName||'';
+  el('userEmail').value=u.email||'';el('userPhone').value=u.phone||'';
+  el('userOrganisation').value=u.organisationId||'';el('userRole').value=u.role||'PREPARER';
+  el('userStatus').value=u.status||'ACTIVE';
+}
+function clearManagedUserForm(){
+  ['editUserId','userFullName','userEmail','userPhone'].forEach(function(id){el(id).value='';});
+  el('userOrganisation').value='';el('userRole').value='PREPARER';el('userStatus').value='ACTIVE';
+}
+function saveManagedUser(){
+  var payload={userId:el('editUserId').value,email:el('userEmail').value,
+    fullName:el('userFullName').value,phone:el('userPhone').value,
+    organisationId:el('userOrganisation').value,role:el('userRole').value,status:el('userStatus').value};
+  text('usersMessage','Menyimpan profil...');
+  google.script.run.withSuccessHandler(function(result){
+    text('usersMessage',result&&result.message?result.message:'Profil berjaya disimpan.');
+    openUserManagement();
+  }).withFailureHandler(function(err){text('usersMessage',err&&err.message?err.message:String(err));})
+    .saveAdminUser(payload);
 }
 
 function initCGSO() {
