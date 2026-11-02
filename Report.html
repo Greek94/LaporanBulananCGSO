@@ -302,13 +302,33 @@ function changeStatus(code,value){
 
   render();
 }
+function reportMonthLabel(period, report){
+  period=period||{}; report=report||{};
+  var raw=String(period.Month||period.PeriodID||report.PeriodID||"").trim();
+  var monthMap={
+    "january":"Januari","february":"Februari","march":"Mac","april":"April",
+    "may":"Mei","june":"Jun","july":"Julai","august":"Ogos",
+    "september":"September","october":"Oktober","november":"November","december":"Disember"
+  };
+  var parts=String(period.PeriodID||report.PeriodID||"").match(/^(\\d{4})-(\\d{2})$/);
+  var year=period.Year|| (parts?parts[1]:"");
+  var month=raw;
+  if(parts){
+    var names=["Januari","Februari","Mac","April","Mei","Jun","Julai","Ogos","September","Oktober","November","Disember"];
+    month=names[Number(parts[2])-1]||raw;
+  }else{
+    month=monthMap[raw.toLowerCase()]||raw;
+  }
+  return month + (year && !String(month).includes(String(year)) ? " "+year : "");
+}
 function render(){
-  const r=data.report||{},p=data.period||{},org=r.OrganisationName||'';
-  const orgCode=String(r.OrganisationCode||'').trim().toUpperCase();
+  const r=data.report||{},p=data.period||{},u=data.user||{};
+  const org=r.OrganisationName||u.organisationName||u.OrganisationName||'';
+  const orgCode=String(r.OrganisationCode||u.organisationCode||u.OrganisationCode||'').trim().toUpperCase();
   const isBKPS=(orgCode==='BKPS'||String(r.OrganisationID||'').trim().toUpperCase()==='ORG004');
   const currentRole=String((data.user&&data.user.role)||data.userRole||'').trim().toUpperCase(); const editable=!!data.editable && (['ADMIN','PREPARER'].includes(currentRole) || !currentRole);
 
-  $('meta').innerHTML=`<strong>Organisasi:</strong> ${esc(org)} &nbsp; | &nbsp; <strong>Kod:</strong> ${esc(r.OrganisationCode||'')} &nbsp; | &nbsp; <strong>Tempoh:</strong> ${esc(p.Month||p.PeriodID||r.PeriodID||'')} &nbsp; | &nbsp; <strong>Status:</strong> <span class="pill">${esc(r.Status||'DRAFT')}</span>`;
+  $('meta').innerHTML=`<strong>Organisasi:</strong> ${esc(org||'-')} &nbsp; | &nbsp; <strong>Kod:</strong> ${esc(orgCode||'-')} &nbsp; | &nbsp; <strong>Tempoh:</strong> ${esc(reportMonthLabel(p,r)||'-')} &nbsp; | &nbsp; <strong>Status:</strong> <span class="pill">${esc(r.Status||'DRAFT')}</span>`;
 
   if(!editable){
     $('saveBtn').disabled=true;
