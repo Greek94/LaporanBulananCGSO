@@ -84,17 +84,16 @@ function getSecretariatDashboardV2(periodId) {
     let status = report ? String(report.Status || 'DRAFT').trim().toUpperCase() : 'NOT_STARTED';
 
     /*
-     * Status CLOSED boleh dikenakan secara automatik apabila tempoh
-     * berakhir. Jika SubmittedAt wujud, rekod itu sebenarnya telah
-     * dihantar; kekalkan maklumat penghantaran untuk dashboard.
+     * CLOSED ialah penutupan tempoh, bukan status penghantaran.
+     * SubmittedAt kekal bukti bahawa laporan pernah dihantar.
      */
     if (report && status === 'CLOSED' && report.SubmittedAt) {
       status = 'SUBMITTED';
     }
 
     /*
-     * Kira kemajuan berdasarkan item sebenar untuk DRAFT dan CLOSED
-     * yang belum dihantar. Pengiraan gagal? Kekalkan nilai tersimpan.
+     * Kira kemajuan item sebelum memetakan rekod yang auto-CLOSED
+     * kepada status penghantaran yang sebenar.
      */
     if (report && (status === 'DRAFT' || status === 'CLOSED') && report.ReportID) {
       try {
@@ -105,6 +104,16 @@ function getSecretariatDashboardV2(periodId) {
       }
     }
 
+    /*
+     * Untuk rekod CLOSED tanpa SubmittedAt:
+     * - ada kemajuan kandungan => DRAFT
+     * - tiada kemajuan kandungan => NOT_STARTED
+     * Status tempoh dikembalikan secara berasingan di bawah.
+     */
+    if (report && status === 'CLOSED') {
+      status = completion > 0 ? 'DRAFT' : 'NOT_STARTED';
+    }
+
     completion = Math.max(0, Math.min(100, completion));
 
     return {
@@ -112,6 +121,8 @@ function getSecretariatDashboardV2(periodId) {
       code: org.Code || '',
       name: org.OrganisationName || '',
       status: status,
+      reportStatus: status,
+      periodStatus: new Date(year, monthNo, 7, 23, 59, 59).getTime() < new Date().getTime() ? 'CLOSED' : 'OPEN',
       completion: completion,
       reportId: report ? String(report.ReportID || '') : '',
       submittedAt: report ? report.SubmittedAt || '' : '',
@@ -121,7 +132,7 @@ function getSecretariatDashboardV2(periodId) {
 
   const submitted = rows.filter(function(r){ return r.status === 'SUBMITTED'; }).length;
   const draft = rows.filter(function(r){ return r.status === 'DRAFT'; }).length;
-  const closed = rows.filter(function(r){ return r.status === 'CLOSED'; }).length;
+  const closed = period.CloseDate.getTime() < new Date().getTime() ? 1 : 0;
   const notStarted = rows.filter(function(r){ return r.status === 'NOT_STARTED'; }).length;
   const total = rows.length;
   const overallCompletion = total
