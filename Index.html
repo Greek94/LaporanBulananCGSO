@@ -153,6 +153,11 @@ function hideAllScreens() {
   if (el("dashboard")) el("dashboard").style.display = "none";
 }
 
+// Compatibility alias for older code that still calls hideScreens().
+function hideScreens() {
+  return hideAllScreens();
+}
+
 function showError(message, detail) {
   stopLoadingProgress();
   hideAllScreens();
