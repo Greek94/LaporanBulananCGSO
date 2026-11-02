@@ -307,7 +307,7 @@ function populatePeriodSelectors(list, selectedId) {
   var periods = Array.isArray(list) ? list : [];
   var years = [];
   periods.forEach(function(p) {
-    var m = String(p.PeriodID || "").match(/^(\\d{4})-(\\d{2})$/);
+    var m = String(p.PeriodID || "").match(/^(\d{4})-(\d{2})$/);
     if (m && years.indexOf(Number(m[1])) < 0) years.push(Number(m[1]));
   });
   years.sort(function(a,b){ return b-a; });
@@ -326,7 +326,7 @@ function populatePeriodSelectors(list, selectedId) {
   });
 
   var selected = String(selectedId || "");
-  var sm = selected.match(/^(\\d{4})-(\\d{2})$/);
+  var sm = selected.match(/^(\d{4})-(\d{2})$/);
   var selectedYear = sm ? Number(sm[1]) : (years[0] || new Date().getFullYear());
   var selectedMonth = sm ? Number(sm[2]) : null;
 
@@ -336,7 +336,7 @@ function populatePeriodSelectors(list, selectedId) {
     ms.innerHTML = "";
     var year = Number(ys.value);
     periods.forEach(function(p) {
-      var m = String(p.PeriodID || "").match(/^(\\d{4})-(\\d{2})$/);
+      var m = String(p.PeriodID || "").match(/^(\d{4})-(\d{2})$/);
       if (!m || Number(m[1]) !== year) return;
       var o = document.createElement("option");
       o.value = m[2];
@@ -361,7 +361,7 @@ function populatePeriodSelectors(list, selectedId) {
 
   fb.onclick = function() {
     var pid = String(ys.value || "") + "-" + String(ms.value || "");
-    if (!/^\\d{4}-\\d{2}$/.test(pid)) return;
+    if (!/^\d{4}-\d{2}$/.test(pid)) return;
 
     fb.disabled = true;
     showLoading("Memuatkan laporan bagi " + pid + "...");
