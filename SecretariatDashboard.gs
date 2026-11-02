@@ -46,11 +46,17 @@ function getSecretariatDashboardV2(periodId) {
     return normalizePeriodId_(r.PeriodID) === pid;
   });
 
-  const rank = function(status) {
-    status = String(status || '').trim().toUpperCase();
-    if (status === 'CLOSED') return 3;
-    if (status === 'SUBMITTED') return 2;
-    if (status === 'DRAFT') return 1;
+  /*
+   * Keutamaan rekod pendua:
+   * SubmittedAt ialah bukti penghantaran yang kekal walaupun
+   * closeExpiredReportsAsSystem_ menukar status kepada CLOSED.
+   */
+  const rank = function(report) {
+    const status = String(report && report.Status || '').trim().toUpperCase();
+    if (report && report.SubmittedAt) return 4;
+    if (status === 'SUBMITTED') return 3;
+    if (status === 'DRAFT') return 2;
+    if (status === 'CLOSED') return 1;
     return 0;
   };
 
@@ -61,7 +67,7 @@ function getSecretariatDashboardV2(periodId) {
     });
 
     matches.sort(function(a, b) {
-      const rd = rank(b.Status) - rank(a.Status);
+      const rd = rank(b) - rank(a);
       if (rd !== 0) return rd;
 
       const ac = Number(a.CompletionPercent || 0);
@@ -75,9 +81,22 @@ function getSecretariatDashboardV2(periodId) {
 
     const report = matches[0] || null;
     let completion = report ? Number(report.CompletionPercent || 0) : 0;
-    const status = report ? String(report.Status || 'DRAFT').trim().toUpperCase() : 'NOT_STARTED';
+    let status = report ? String(report.Status || 'DRAFT').trim().toUpperCase() : 'NOT_STARTED';
 
-    if (report && status === 'DRAFT' && report.ReportID) {
+    /*
+     * Status CLOSED boleh dikenakan secara automatik apabila tempoh
+     * berakhir. Jika SubmittedAt wujud, rekod itu sebenarnya telah
+     * dihantar; kekalkan maklumat penghantaran untuk dashboard.
+     */
+    if (report && status === 'CLOSED' && report.SubmittedAt) {
+      status = 'SUBMITTED';
+    }
+
+    /*
+     * Kira kemajuan berdasarkan item sebenar untuk DRAFT dan CLOSED
+     * yang belum dihantar. Pengiraan gagal? Kekalkan nilai tersimpan.
+     */
+    if (report && (status === 'DRAFT' || status === 'CLOSED') && report.ReportID) {
       try {
         const calculated = Number(calculateCompletion_(report.ReportID, report.OrganisationID));
         if (isFinite(calculated) && calculated >= 0) completion = calculated;
