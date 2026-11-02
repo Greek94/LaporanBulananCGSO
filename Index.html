@@ -317,6 +317,10 @@ function populatePeriodSelectors(list, selectedId) {
   var fb = el("filterBtn");
   if (!ys || !ms || !fb) return;
 
+  /* Aktifkan kawalan selepas senarai tempoh diterima. */
+  ys.disabled = false;
+  ms.disabled = false;
+
   ys.innerHTML = "";
   years.forEach(function(y) {
     var o = document.createElement("option");
