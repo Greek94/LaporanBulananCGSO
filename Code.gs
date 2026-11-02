@@ -811,7 +811,7 @@ function getUserReportingPeriods() {
   const rows = values.map(function(row) {
     const period = rowToObject_(headers, row);
     const periodId = normalizePeriodId_(row[periodIndex]);
-    if (!periodId || !/^\\d{4}-\\d{2}$/.test(periodId)) return null;
+    if (!periodId || !/^\d{4}-\d{2}$/.test(periodId)) return null;
 
     const parts = periodId.split('-');
     const year = Number(parts[0]);
