@@ -41,10 +41,7 @@ function getSecretariatDashboardV2(periodId) {
     Label: months[monthNo - 1] + ' ' + year
   };
 
-  const allReports = getAllReports_() || [];
-  const reports = allReports.filter(function(r) {
-    return normalizePeriodId_(r.PeriodID) === pid;
-  });
+  const periodReports = getReportsByPeriod_(pid) || [];
 
   /*
    * Keutamaan rekod pendua:
@@ -61,40 +58,44 @@ function getSecretariatDashboardV2(periodId) {
   };
 
   const orgs = getActiveOrganisations_() || [];
+  const reportsByOrganisation = {};
+
+  // Kumpulkan laporan sekali sahaja; elakkan reports.filter() untuk setiap organisasi.
+  periodReports.forEach(function(report) {
+    const orgId = String(report.OrganisationID || '').trim();
+    if (!orgId) return;
+    if (!reportsByOrganisation[orgId]) reportsByOrganisation[orgId] = [];
+    reportsByOrganisation[orgId].push(report);
+  });
+
   const rows = orgs.map(function(org) {
-    const matches = reports.filter(function(r) {
-      return String(r.OrganisationID || '').trim() === String(org.OrganisationID || '').trim();
-    });
+    const orgId = String(org.OrganisationID || '').trim();
+    const matches = reportsByOrganisation[orgId] || [];
 
-    matches.sort(function(a, b) {
-      const rd = rank(b) - rank(a);
-      if (rd !== 0) return rd;
+    // Pilih rekod terbaik hanya apabila terdapat rekod pendua.
+    let report = matches.length === 1 ? matches[0] : null;
+    if (matches.length > 1) {
+      matches.sort(function(a, b) {
+        const rd = rank(b) - rank(a);
+        if (rd !== 0) return rd;
 
-      const ac = Number(a.CompletionPercent || 0);
-      const bc = Number(b.CompletionPercent || 0);
-      if (bc !== ac) return bc - ac;
+        const ac = Number(a.CompletionPercent || 0);
+        const bc = Number(b.CompletionPercent || 0);
+        if (bc !== ac) return bc - ac;
 
-      const ad = parseDate_(a.UpdatedAt) || parseDate_(a.CreatedAt) || new Date(0);
-      const bd = parseDate_(b.UpdatedAt) || parseDate_(b.CreatedAt) || new Date(0);
-      return bd.getTime() - ad.getTime();
-    });
+        const ad = parseDate_(a.UpdatedAt) || parseDate_(a.CreatedAt) || new Date(0);
+        const bd = parseDate_(b.UpdatedAt) || parseDate_(b.CreatedAt) || new Date(0);
+        return bd.getTime() - ad.getTime();
+      });
+      report = matches[0];
+    }
 
-    const report = matches[0] || null;
     let completion = report ? Number(report.CompletionPercent || 0) : 0;
     let status = report ? String(report.Status || 'DRAFT').trim().toUpperCase() : 'NOT_STARTED';
 
-    /*
-     * CLOSED ialah penutupan tempoh, bukan status penghantaran.
-     * SubmittedAt kekal bukti bahawa laporan pernah dihantar.
-     */
-    if (report && status === 'CLOSED' && report.SubmittedAt) {
-      status = 'SUBMITTED';
-    }
+    // CLOSED ialah penutupan tempoh, bukan status penghantaran.
+    if (report && status === 'CLOSED' && report.SubmittedAt) status = 'SUBMITTED';
 
-    /*
-     * Kira kemajuan item sebelum memetakan rekod yang auto-CLOSED
-     * kepada status penghantaran yang sebenar.
-     */
     if (report && (status === 'DRAFT' || status === 'CLOSED') && report.ReportID) {
       try {
         const calculated = Number(calculateCompletion_(report.ReportID, report.OrganisationID));
@@ -104,16 +105,7 @@ function getSecretariatDashboardV2(periodId) {
       }
     }
 
-    /*
-     * Untuk rekod CLOSED tanpa SubmittedAt:
-     * - ada kemajuan kandungan => DRAFT
-     * - tiada kemajuan kandungan => NOT_STARTED
-     * Status tempoh dikembalikan secara berasingan di bawah.
-     */
-    if (report && status === 'CLOSED') {
-      status = completion > 0 ? 'DRAFT' : 'NOT_STARTED';
-    }
-
+    if (report && status === 'CLOSED') status = completion > 0 ? 'DRAFT' : 'NOT_STARTED';
     completion = Math.max(0, Math.min(100, completion));
 
     return {
