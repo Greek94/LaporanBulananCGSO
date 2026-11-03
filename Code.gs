@@ -3270,126 +3270,63 @@ function getRecordsByReportIdFromSheet_(
    REPORT BY ID
    ============================================================ */
 
-function getReportById_(
-  reportId
-) {
-
-  const report =
-    getAllReports_()
-      .find(
-        function(item) {
-
-          return String(
-            item.ReportID
-          ) === String(
-            reportId
-          );
-
-        }
-      );
-
-
-  if (!report) {
-
-    throw new Error(
-      'Laporan tidak dijumpai.'
-    );
+function getReportById_(reportId) {
+  const sheet = getRequiredSheet_(SHEETS.REPORTS);
+  const lastRow = sheet.getLastRow();
+  const lastColumn = sheet.getLastColumn();
+  if (lastRow < 2 || lastColumn < 1) {
+    throw new Error('Laporan tidak dijumpai.');
   }
 
+  const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0].map(String);
+  const idIndex = headers.indexOf('ReportID');
+  if (idIndex < 0) throw new Error('Kolum ReportID tidak dijumpai dalam REPORTS.');
 
-  return report;
+  // Cari terus dalam kolum ID menggunakan TextFinder, bukan membaca semua laporan.
+  const match = sheet.getRange(2, idIndex + 1, lastRow - 1, 1)
+    .createTextFinder(String(reportId))
+    .matchEntireCell(true)
+    .matchCase(true)
+    .findNext();
+
+  if (!match) throw new Error('Laporan tidak dijumpai.');
+
+  const row = sheet.getRange(match.getRow(), 1, 1, lastColumn).getValues()[0];
+  return rowToObject_(headers, row);
 }
-
 
 /* ============================================================
    UPDATE REPORT
    ============================================================ */
 
-function updateReport_(
-  reportId,
-  patch
-) {
+function updateReport_(reportId, patch) {
+  const sheet = getRequiredSheet_(SHEETS.REPORTS);
+  const lastRow = sheet.getLastRow();
+  const lastColumn = sheet.getLastColumn();
+  if (lastRow < 2 || lastColumn < 1) throw new Error('Laporan tidak dijumpai.');
 
-  const sheet =
-    getRequiredSheet_(
-      SHEETS.REPORTS
-    );
+  const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0].map(String);
+  const idIndex = headers.indexOf('ReportID');
+  if (idIndex < 0) throw new Error('Kolum ReportID tidak dijumpai dalam REPORTS.');
 
+  const match = sheet.getRange(2, idIndex + 1, lastRow - 1, 1)
+    .createTextFinder(String(reportId))
+    .matchEntireCell(true)
+    .matchCase(true)
+    .findNext();
 
-  const values =
-    sheet
-      .getDataRange()
-      .getValues();
+  if (!match) throw new Error('Laporan tidak dijumpai.');
 
+  const rowNumber = match.getRow();
+  const row = sheet.getRange(rowNumber, 1, 1, lastColumn).getValues()[0];
 
-  const headers =
-    values.shift();
+  Object.keys(patch || {}).forEach(function(key) {
+    const index = headers.indexOf(key);
+    if (index >= 0) row[index] = patch[key];
+  });
 
-
-  const idIdx =
-    headers.indexOf(
-      'ReportID'
-    );
-
-
-  const rowIndex =
-    values.findIndex(
-      function(row) {
-
-        return String(
-          row[idIdx]
-        ) === String(
-          reportId
-        );
-
-      }
-    );
-
-
-  if (
-    rowIndex < 0
-  ) {
-
-    throw new Error(
-      'Laporan tidak dijumpai.'
-    );
-  }
-
-
-  const row =
-    values[rowIndex];
-
-
-  Object.keys(
-    patch
-  ).forEach(
-    function(key) {
-
-      const idx =
-        headers.indexOf(
-          key
-        );
-
-
-      if (idx >= 0) {
-
-        row[idx] =
-          patch[key];
-      }
-    }
-  );
-
-
-  sheet
-    .getRange(
-      rowIndex + 2,
-      1,
-      1,
-      row.length
-    )
-    .setValues([row]);
+  sheet.getRange(rowNumber, 1, 1, lastColumn).setValues([row]);
 }
-
 
 /* ============================================================
    MODULES
