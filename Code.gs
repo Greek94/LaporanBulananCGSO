@@ -3166,100 +3166,73 @@ function findBestReportRecord_(records) {
 function getPeriodSummary_(
   periodId
 ) {
+  if (!periodId) return null;
 
-  if (!periodId) {
-    return null;
-  }
+  const reports = getReportsByPeriod_(periodId);
+  const total = getActiveOrganisations_().length;
 
+  // Ringkasan dikira berdasarkan satu rekod terbaik setiap organisasi,
+  // supaya rekod pendua tidak menggandakan kiraan status.
+  const byOrganisation = {};
+  reports.forEach(function(report) {
+    const organisationId = String(report.OrganisationID || '').trim();
+    if (!organisationId) return;
+    if (!byOrganisation[organisationId]) byOrganisation[organisationId] = [];
+    byOrganisation[organisationId].push(report);
+  });
 
-  const reports =
-    getReportsByPeriod_(periodId);
+  const statusRank = function(report) {
+    const status = String(report.Status || '').trim().toUpperCase();
+    if (report.SubmittedAt || status === 'SUBMITTED') return 3;
+    if (status === 'DRAFT') return 2;
+    if (status === 'CLOSED') return 1;
+    return 0;
+  };
 
+  const selected = Object.keys(byOrganisation).map(function(organisationId) {
+    const candidates = byOrganisation[organisationId];
+    candidates.sort(function(a, b) {
+      const rankDifference = statusRank(b) - statusRank(a);
+      if (rankDifference !== 0) return rankDifference;
 
-  const total =
-    getActiveOrganisations_()
-      .length;
+      const completionDifference =
+        Number(b.CompletionPercent || 0) - Number(a.CompletionPercent || 0);
+      if (completionDifference !== 0) return completionDifference;
 
+      const aDate = parseDate_(a.UpdatedAt) || new Date(0);
+      const bDate = parseDate_(b.UpdatedAt) || new Date(0);
+      return bDate.getTime() - aDate.getTime();
+    });
+    return candidates[0];
+  });
 
-  const submitted =
-    reports.filter(
-      function(report) {
+  const submitted = selected.filter(function(report) {
+    return statusRank(report) === 3;
+  }).length;
 
-        return String(
-          report.Status
-        ).toUpperCase() ===
-        'SUBMITTED';
+  const draft = selected.filter(function(report) {
+    return String(report.Status || '').trim().toUpperCase() === 'DRAFT' &&
+      statusRank(report) === 2;
+  }).length;
 
-      }
-    ).length;
-
-
-  const draft =
-    reports.filter(
-      function(report) {
-
-        return String(
-          report.Status
-        ).toUpperCase() ===
-        'DRAFT';
-
-      }
-    ).length;
-
-
-  const closed =
-    reports.filter(
-      function(report) {
-
-        return String(
-          report.Status
-        ).toUpperCase() ===
-        'CLOSED';
-
-      }
-    ).length;
-
+  const closed = selected.filter(function(report) {
+    return String(report.Status || '').trim().toUpperCase() === 'CLOSED' &&
+      !report.SubmittedAt;
+  }).length;
 
   return {
-
-    periodId:
-      periodId,
-
-    totalExpected:
-      total,
-
-    totalRecords:
-      reports.length,
-
-    submitted:
-      submitted,
-
-    draft:
-      draft,
-
-    closed:
-      closed,
-
-    notStarted:
-      Math.max(
-        0,
-        total -
-        submitted -
-        draft -
-        closed
-      ),
-
-    completionRate:
-      total
-        ? Math.round(
-            submitted /
-            total *
-            10000
-          ) / 100
-        : 0
+    periodId: periodId,
+    totalExpected: total,
+    totalRecords: selected.length,
+    submitted: submitted,
+    draft: draft,
+    closed: closed,
+    notStarted: Math.max(0, total - submitted - draft - closed),
+    completionRate: total
+      ? Math.round(submitted / total * 10000) / 100
+      : 0
   };
 }
-
 
 /* ============================================================
    EMAIL
