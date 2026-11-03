@@ -1739,184 +1739,66 @@ function submitReportForm(
 function getVisibleItemsForOrganisation_(
   organisationId
 ) {
+  const itemSheet = getRequiredSheet_(SHEETS.ITEMS);
+  const accessSheet = getRequiredSheet_(SHEETS.ACCESS);
 
-  const itemSheet =
-    getRequiredSheet_(
-      SHEETS.ITEMS
-    );
+  const itemValues = itemSheet.getDataRange().getValues();
+  if (itemValues.length < 2) return [];
 
-
-  const accessSheet =
-    getRequiredSheet_(
-      SHEETS.ACCESS
-    );
-
-
-  const itemValues =
-    itemSheet
-      .getDataRange()
-      .getValues();
-
-
-  if (
-    itemValues.length < 2
-  ) {
-    return [];
-  }
-
-
-  const itemHeaders =
-    itemValues.shift();
-
-
+  const itemHeaders = itemValues.shift();
   const items = {};
+  itemValues.forEach(function(row) {
+    const item = rowToObject_(itemHeaders, row);
+    items[String(item.ItemCode)] = item;
+  });
 
+  // Fetch only access records for the requested organisation.
+  const accessLastRow = accessSheet.getLastRow();
+  const accessLastColumn = accessSheet.getLastColumn();
+  if (accessLastRow < 2 || accessLastColumn < 1) return [];
 
-  itemValues.forEach(
-    function(row) {
-
-      const item =
-        rowToObject_(
-          itemHeaders,
-          row
-        );
-
-      items[
-        String(
-          item.ItemCode
-        )
-      ] = item;
-    }
-  );
-
-
-  const accessValues =
-    accessSheet
-      .getDataRange()
-      .getValues();
-
-
-  if (
-    accessValues.length < 2
-  ) {
-    return [];
+  const accessHeaders = accessSheet.getRange(1, 1, 1, accessLastColumn).getValues()[0];
+  const organisationIndex = accessHeaders.indexOf('OrganisationID');
+  if (organisationIndex < 0) {
+    throw new Error('Kolum OrganisationID tidak dijumpai dalam ORGANISATION_ITEM_ACCESS.');
   }
 
+  const matches = accessSheet
+    .getRange(2, organisationIndex + 1, accessLastRow - 1, 1)
+    .createTextFinder(String(organisationId))
+    .matchEntireCell(true)
+    .matchCase(true)
+    .findAll();
 
-  const accessHeaders =
-    accessValues.shift();
+  return matches
+    .map(function(match) {
+      const row = accessSheet.getRange(match.getRow(), 1, 1, accessLastColumn).getValues()[0];
+      return rowToObject_(accessHeaders, row);
+    })
+    .filter(function(access) {
+      return String(access.Active).toUpperCase() === 'TRUE';
+    })
+    .sort(function(a, b) {
+      return Number(a.DisplayOrder || 0) - Number(b.DisplayOrder || 0);
+    })
+    .map(function(access) {
+      const item = items[String(access.ItemCode)];
+      if (!item) return null;
 
-
-  return accessValues
-
-    .map(
-      function(row) {
-
-        return rowToObject_(
-          accessHeaders,
-          row
-        );
-
-      }
-    )
-
-    .filter(
-      function(access) {
-
-        return String(
-          access.OrganisationID
-        ) === String(
-          organisationId
-        );
-
-      }
-    )
-
-    .filter(
-      function(access) {
-
-        return String(
-          access.Active
-        ).toUpperCase() ===
-        'TRUE';
-
-      }
-    )
-
-    .sort(
-      function(a,b) {
-
-        return Number(
-          a.DisplayOrder || 0
-        ) -
-        Number(
-          b.DisplayOrder || 0
-        );
-
-      }
-    )
-
-    .map(
-      function(access) {
-
-        const item =
-          items[
-            String(
-              access.ItemCode
-            )
-          ];
-
-
-        if (!item) {
-          return null;
-        }
-
-
-        return {
-
-          ItemCode:
-            item.ItemCode,
-
-          Section:
-            Number(
-              item.Section || 0
-            ),
-
-          ItemName:
-            item.ItemName,
-
-          InputType:
-            item.InputType,
-
-          Fields:
-            String(
-              item.Fields || ''
-            )
-            .split(';')
-            .map(
-              function(s) {
-                return s.trim();
-              }
-            )
-            .filter(Boolean),
-
-          Required:
-            String(
-              access.Required
-            ).toUpperCase() ===
-            'TRUE',
-
-          DisplayOrder:
-            Number(
-              access.DisplayOrder || 0
-            )
-        };
-      }
-    )
-
+      return {
+        ItemCode: item.ItemCode,
+        Section: Number(item.Section || 0),
+        ItemName: item.ItemName,
+        InputType: item.InputType,
+        Fields: String(item.Fields || '').split(';').map(function(value) {
+          return value.trim();
+        }).filter(Boolean),
+        Required: String(access.Required).toUpperCase() === 'TRUE',
+        DisplayOrder: Number(access.DisplayOrder || 0)
+      };
+    })
     .filter(Boolean);
 }
-
 
 /* ============================================================
    ITEM STATUS
@@ -2085,6 +1967,32 @@ function upsertItemStatuses_(
 function getActivities_(
   reportId
 ) {
+  const sheet = getDb_().getSheetByName(SHEETS.ACTIVITIES);
+  if (!sheet) return [];
+
+  const lastRow = sheet.getLastRow();
+  const lastColumn = sheet.getLastColumn();
+  if (lastRow < 2 || lastColumn < 1) return [];
+
+  const headers = sheet.getRange(1, 1, 1, lastColumn).getDisplayValues()[0];
+  const reportIndex = headers.indexOf('ReportID');
+  if (reportIndex < 0) {
+    throw new Error('Kolum ReportID tidak dijumpai dalam ACTIVITIES.');
+  }
+
+  // Search only rows belonging to this report; do not read the entire activity log.
+  const matches = sheet
+    .getRange(2, reportIndex + 1, lastRow - 1, 1)
+    .createTextFinder(String(reportId))
+    .matchEntireCell(true)
+    .matchCase(true)
+    .findAll();
+
+  return matches.map(function(match) {
+    const row = sheet.getRange(match.getRow(), 1, 1, lastColumn).getDisplayValues()[0];
+    return rowToObject_(headers, row);
+  });
+}
 
   const sheet =
     getDb_()
