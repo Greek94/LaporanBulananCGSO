@@ -3137,73 +3137,35 @@ function updateReport_(reportId, patch) {
 function getModulesForOrganisation_(
   organisationId
 ) {
+  const sheet = getDb_().getSheetByName(SHEETS.MODULES);
+  if (!sheet) return [];
 
-  const sheet =
-    getDb_()
-      .getSheetByName(
-        SHEETS.MODULES
-      );
+  const lastRow = sheet.getLastRow();
+  const lastColumn = sheet.getLastColumn();
+  if (lastRow < 2 || lastColumn < 1) return [];
 
-
-  if (!sheet) {
-    return [];
+  const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+  const organisationIndex = headers.indexOf('OrganisationID');
+  if (organisationIndex < 0) {
+    throw new Error('Kolum OrganisationID tidak dijumpai dalam MODULES.');
   }
 
+  const matches = sheet
+    .getRange(2, organisationIndex + 1, lastRow - 1, 1)
+    .createTextFinder(String(organisationId))
+    .matchEntireCell(true)
+    .matchCase(true)
+    .findAll();
 
-  const values =
-    sheet
-      .getDataRange()
-      .getValues();
-
-
-  if (
-    values.length < 2
-  ) {
-    return [];
-  }
-
-
-  const headers =
-    values.shift();
-
-
-  return values
-
-    .map(
-      function(row) {
-
-        return rowToObject_(
-          headers,
-          row
-        );
-
-      }
-    )
-
-    .filter(
-      function(module) {
-
-        return String(
-          module.OrganisationID
-        ) === String(
-          organisationId
-        );
-
-      }
-    )
-
-    .filter(
-      function(module) {
-
-        return String(
-          module.Active
-        ).toUpperCase() ===
-        'TRUE';
-
-      }
-    );
+  return matches
+    .map(function(match) {
+      const row = sheet.getRange(match.getRow(), 1, 1, lastColumn).getValues()[0];
+      return rowToObject_(headers, row);
+    })
+    .filter(function(module) {
+      return String(module.Active).toUpperCase() === 'TRUE';
+    });
 }
-
 
 /* ============================================================
    REPORT SELECTION HELPER
