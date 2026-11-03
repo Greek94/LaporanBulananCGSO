@@ -2846,13 +2846,10 @@ function getReportsByPeriod_(periodId) {
   const sheet = getRequiredSheet_(SHEETS.REPORTS);
   const lastRow = sheet.getLastRow();
   const lastColumn = sheet.getLastColumn();
-
   if (lastRow < 2 || lastColumn < 1) return [];
 
-  const values = sheet.getRange(1, 1, lastRow, lastColumn).getValues();
-  const headers = values[0].map(String);
+  const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0].map(String);
   const periodIndex = headers.indexOf('PeriodID');
-
   if (periodIndex < 0) {
     throw new Error('Kolum PeriodID tidak dijumpai dalam REPORTS.');
   }
@@ -2871,19 +2868,24 @@ function getReportsByPeriod_(periodId) {
     indices[field] = headers.indexOf(field);
   });
 
-  return values.slice(1).reduce(function(result, row) {
-    if (String(row[periodIndex] || '').trim() !== wantedPeriod) return result;
+  // Search the requested period column only; retrieve matching rows, not all reports.
+  const matches = sheet
+    .getRange(2, periodIndex + 1, lastRow - 1, 1)
+    .createTextFinder(wantedPeriod)
+    .matchEntireCell(true)
+    .matchCase(true)
+    .findAll();
 
+  return matches.map(function(match) {
+    const row = sheet.getRange(match.getRow(), 1, 1, lastColumn).getValues()[0];
     const report = {};
     requiredFields.forEach(function(field) {
       const index = indices[field];
       report[field] = index >= 0 ? row[index] : '';
     });
-    result.push(report);
-    return result;
-  }, []);
+    return report;
+  });
 }
-
 
 function getAllReports_() {
 
