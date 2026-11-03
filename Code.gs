@@ -531,13 +531,8 @@ function getDashboardData() {
       const wantedPeriod =
         String(period.PeriodID || '').trim();
 
-      const allReports =
-        getAllReports_() || [];
-
       const periodReports =
-        allReports.filter(function(report) {
-          return String(report.PeriodID || '').trim() === wantedPeriod;
-        });
+        getReportsByPeriod_(wantedPeriod) || [];
 
       /*
        * Jika terdapat duplicate report untuk organisasi yang sama,
@@ -3196,6 +3191,57 @@ function getPeriodById_(
    REPORT LOOKUP
    ============================================================ */
 
+/**
+ * Membaca laporan untuk satu tempoh sahaja.
+ * Mengurangkan kerja pemetaan objek bagi rekod tempoh lama.
+ * READ-ONLY; tiada cache supaya status sentiasa terkini.
+ */
+function getReportsByPeriod_(periodId) {
+  const wantedPeriod = String(periodId || '').trim();
+  if (!wantedPeriod) return [];
+
+  const sheet = getRequiredSheet_(SHEETS.REPORTS);
+  const lastRow = sheet.getLastRow();
+  const lastColumn = sheet.getLastColumn();
+
+  if (lastRow < 2 || lastColumn < 1) return [];
+
+  const values = sheet.getRange(1, 1, lastRow, lastColumn).getValues();
+  const headers = values[0].map(String);
+  const periodIndex = headers.indexOf('PeriodID');
+
+  if (periodIndex < 0) {
+    throw new Error('Kolum PeriodID tidak dijumpai dalam REPORTS.');
+  }
+
+  const requiredFields = [
+    'PeriodID',
+    'OrganisationID',
+    'Status',
+    'CompletionPercent',
+    'ReportID',
+    'SubmittedAt',
+    'UpdatedAt'
+  ];
+  const indices = {};
+  requiredFields.forEach(function(field) {
+    indices[field] = headers.indexOf(field);
+  });
+
+  return values.slice(1).reduce(function(result, row) {
+    if (String(row[periodIndex] || '').trim() !== wantedPeriod) return result;
+
+    const report = {};
+    requiredFields.forEach(function(field) {
+      const index = indices[field];
+      report[field] = index >= 0 ? row[index] : '';
+    });
+    result.push(report);
+    return result;
+  }, []);
+}
+
+
 function getAllReports_() {
 
   const sheet =
@@ -3583,18 +3629,7 @@ function getPeriodSummary_(
 
 
   const reports =
-    getAllReports_()
-      .filter(
-        function(report) {
-
-          return String(
-            report.PeriodID
-          ) === String(
-            periodId
-          );
-
-        }
-      );
+    getReportsByPeriod_(periodId);
 
 
   const total =
