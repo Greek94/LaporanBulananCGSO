@@ -1542,26 +1542,14 @@ function saveReportForm(
       : [];
 
 
-  items.forEach(
-    function(item) {
+  const validItems = items.filter(function(item) {
+    return item && allowed.has(String(item.itemCode));
+  });
 
-      if (
-        allowed.has(
-          String(
-            item.itemCode
-          )
-        )
-      ) {
-
-        upsertItemStatus_(
-          reportId,
-          item.itemCode,
-          item.status,
-          user.userId
-        );
-      }
-
-    }
+  upsertItemStatuses_(
+    reportId,
+    validItems,
+    user.userId
   );
 
 
@@ -2034,158 +2022,106 @@ function upsertItemStatus_(
   status,
   userId
 ) {
-
-  const normal =
-    String(
-      status || ''
-    ).toUpperCase();
-
-
-  if (
-    ![
-      'ADA',
-      'TIADA',
-      ''
-    ].includes(normal)
-  ) {
-
-    throw new Error(
-      'Status item tidak sah.'
-    );
-  }
-
-
-  const sheet =
-    getRequiredSheet_(
-      SHEETS.STATUS
-    );
-
-
-  const values =
-    sheet
-      .getDataRange()
-      .getValues();
-
-
-  const headers =
-    values.shift();
-
-
-  const reportIdx =
-    headers.indexOf(
-      'ReportID'
-    );
-
-
-  const itemIdx =
-    headers.indexOf(
-      'ItemCode'
-    );
-
-
-  const existingIndex =
-    values.findIndex(
-      function(row) {
-
-        return (
-          String(
-            row[reportIdx]
-          ) === String(
-            reportId
-          ) &&
-
-          String(
-            row[itemIdx]
-          ) === String(
-            itemCode
-          )
-        );
-
-      }
-    );
-
-
-  const row =
-    new Array(
-      headers.length
-    ).fill('');
-
-
-  setByHeader_(
-    headers,
-    row,
-    'RecordID',
-    existingIndex >= 0
-      ? values[
-          existingIndex
-        ][
-          headers.indexOf(
-            'RecordID'
-          )
-        ]
-      : 'RS-' +
-        Utilities.getUuid()
-  );
-
-
-  setByHeader_(
-    headers,
-    row,
-    'ReportID',
-    reportId
-  );
-
-
-  setByHeader_(
-    headers,
-    row,
-    'ItemCode',
-    itemCode
-  );
-
-
-  setByHeader_(
-    headers,
-    row,
-    'Status',
-    normal
-  );
-
-
-  setByHeader_(
-    headers,
-    row,
-    'UpdatedBy',
+  upsertItemStatuses_(
+    reportId,
+    [{ itemCode: itemCode, status: status }],
     userId
   );
+}
 
 
-  setByHeader_(
-    headers,
-    row,
-    'UpdatedAt',
-    new Date()
-  );
+/**
+ * Simpan semua status item bagi satu laporan dengan satu bacaan
+ * bagi helaian REPORT_ITEM_STATUS. Rekod laporan lain tidak disentuh.
+ */
+function upsertItemStatuses_(
+  reportId,
+  items,
+  userId
+) {
+  const requested = Array.isArray(items) ? items : [];
+  if (!requested.length) return;
 
+  // Normalisasi dan sahkan sebelum mengubah helaian.
+  const normalized = requested.map(function(item) {
+    const status = String(item.status || '').toUpperCase();
+    if (!['ADA', 'TIADA', ''].includes(status)) {
+      throw new Error('Status item tidak sah.');
+    }
+    return {
+      itemCode: String(item.itemCode || ''),
+      status: status
+    };
+  }).filter(function(item) {
+    return item.itemCode !== '';
+  });
 
-  if (
-    existingIndex >= 0
-  ) {
+  if (!normalized.length) return;
 
-    sheet
-      .getRange(
-        existingIndex + 2,
-        1,
-        1,
-        row.length
-      )
-      .setValues([row]);
-
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    throw new Error('Sistem sedang memproses laporan. Sila cuba semula sebentar lagi.');
   }
 
-  else {
+  try {
+    const sheet = getRequiredSheet_(SHEETS.STATUS);
+    const lastRow = sheet.getLastRow();
+    const lastColumn = sheet.getLastColumn();
+    if (lastRow < 1 || lastColumn < 1) {
+      throw new Error('REPORT_ITEM_STATUS tidak mempunyai header.');
+    }
 
-    sheet.appendRow(row);
+    const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0].map(String);
+    const reportIdx = headers.indexOf('ReportID');
+    const itemIdx = headers.indexOf('ItemCode');
+    const recordIdx = headers.indexOf('RecordID');
+
+    if (reportIdx < 0 || itemIdx < 0 || recordIdx < 0) {
+      throw new Error('Header ReportID, ItemCode atau RecordID tidak dijumpai dalam REPORT_ITEM_STATUS.');
+    }
+
+    const values = lastRow >= 2
+      ? sheet.getRange(2, 1, lastRow - 1, lastColumn).getValues()
+      : [];
+
+    const rowByItem = new Map();
+    values.forEach(function(row, index) {
+      if (String(row[reportIdx] || '') === String(reportId)) {
+        const key = String(row[itemIdx] || '');
+        // Kekalkan rekod sedia ada yang pertama; duplicate lama tidak dipadam.
+        if (!rowByItem.has(key)) rowByItem.set(key, index + 2);
+      }
+    });
+
+    const now = new Date();
+    const rowsToAppend = [];
+
+    normalized.forEach(function(item) {
+      const rowNumber = rowByItem.get(item.itemCode);
+      const row = new Array(headers.length).fill('');
+
+      setByHeader_(headers, row, 'RecordID', rowNumber
+        ? String(sheet.getRange(rowNumber, recordIdx + 1).getValue() || '')
+        : 'RS-' + Utilities.getUuid());
+      setByHeader_(headers, row, 'ReportID', reportId);
+      setByHeader_(headers, row, 'ItemCode', item.itemCode);
+      setByHeader_(headers, row, 'Status', item.status);
+      setByHeader_(headers, row, 'UpdatedBy', userId);
+      setByHeader_(headers, row, 'UpdatedAt', now);
+
+      if (rowNumber) {
+        sheet.getRange(rowNumber, 1, 1, row.length).setValues([row]);
+      } else {
+        rowsToAppend.push(row);
+      }
+    });
+
+    if (rowsToAppend.length) {
+      const appendAt = sheet.getLastRow() + 1;
+      sheet.getRange(appendAt, 1, rowsToAppend.length, lastColumn).setValues(rowsToAppend);
+    }
+  } finally {
+    lock.releaseLock();
   }
 }
 
