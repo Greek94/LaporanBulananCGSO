@@ -1925,88 +1925,40 @@ function getVisibleItemsForOrganisation_(
 function getItemStatuses_(
   reportId
 ) {
+  const sheet = getDb_().getSheetByName(SHEETS.STATUS);
+  if (!sheet) return {};
 
-  const sheet =
-    getDb_()
-      .getSheetByName(
-        SHEETS.STATUS
-      );
+  const lastRow = sheet.getLastRow();
+  const lastColumn = sheet.getLastColumn();
+  if (lastRow < 2 || lastColumn < 1) return {};
 
+  const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0].map(String);
+  const reportIndex = headers.indexOf('ReportID');
+  const itemIndex = headers.indexOf('ItemCode');
+  const statusIndex = headers.indexOf('Status');
+  const updatedByIndex = headers.indexOf('UpdatedBy');
+  const updatedAtIndex = headers.indexOf('UpdatedAt');
 
-  if (!sheet) {
-    return {};
+  if (reportIndex < 0 || itemIndex < 0 || statusIndex < 0) {
+    throw new Error('Header ReportID, ItemCode atau Status tidak dijumpai dalam REPORT_ITEM_STATUS.');
   }
 
-
-  const values =
-    sheet
-      .getDataRange()
-      .getValues();
-
-
-  if (
-    values.length < 2
-  ) {
-    return {};
-  }
-
-
-  const headers =
-    values.shift();
-
+  // Cari baris laporan berkenaan sahaja, bukan membina objek untuk seluruh sheet.
+  const matches = sheet.getRange(2, reportIndex + 1, lastRow - 1, 1)
+    .createTextFinder(String(reportId))
+    .matchEntireCell(true)
+    .matchCase(true)
+    .findAll();
 
   const result = {};
-
-
-  values
-
-    .map(
-      function(row) {
-
-        return rowToObject_(
-          headers,
-          row
-        );
-
-      }
-    )
-
-    .filter(
-      function(item) {
-
-        return String(
-          item.ReportID
-        ) === String(
-          reportId
-        );
-
-      }
-    )
-
-    .forEach(
-      function(item) {
-
-        result[
-          String(
-            item.ItemCode
-          )
-        ] = {
-
-          status:
-            String(
-              item.Status || ''
-            ),
-
-          updatedBy:
-            item.UpdatedBy || '',
-
-          updatedAt:
-            item.UpdatedAt || ''
-        };
-
-      }
-    );
-
+  matches.forEach(function(match) {
+    const row = sheet.getRange(match.getRow(), 1, 1, lastColumn).getValues()[0];
+    result[String(row[itemIndex] || '')] = {
+      status: String(row[statusIndex] || ''),
+      updatedBy: updatedByIndex >= 0 ? row[updatedByIndex] || '' : '',
+      updatedAt: updatedAtIndex >= 0 ? row[updatedAtIndex] || '' : ''
+    };
+  });
 
   return result;
 }
