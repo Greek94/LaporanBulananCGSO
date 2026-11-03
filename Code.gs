@@ -1994,61 +1994,6 @@ function getActivities_(
   });
 }
 
-  const sheet =
-    getDb_()
-      .getSheetByName(
-        SHEETS.ACTIVITIES
-      );
-
-
-  if (!sheet) {
-    return [];
-  }
-
-
-  const values =
-    sheet
-      .getDataRange()
-      .getDisplayValues();
-
-
-  if (
-    values.length < 2
-  ) {
-    return [];
-  }
-
-
-  const headers =
-    values.shift();
-
-
-  return values
-
-    .map(
-      function(row) {
-
-        return rowToObject_(
-          headers,
-          row
-        );
-
-      }
-    )
-
-    .filter(
-      function(activity) {
-
-        return String(
-          activity.ReportID
-        ) === String(
-          reportId
-        );
-
-      }
-    );
-}
-
 
 function replaceActivities_(
   reportId,
