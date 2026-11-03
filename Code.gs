@@ -745,43 +745,67 @@ function getDashboardData() {
    ============================================================ */
 
 function ensureCurrentReportingCycle_() {
-
-  /*
-   * Tutup tempoh yang telah tamat.
-   */
+  // Pastikan status tempoh lama dan tempoh semasa dikemas kini.
   closeExpiredReportsAsSystem_();
+  const period = createOrGetCurrentPeriod_();
+  const organisations = getActiveOrganisations_() || [];
+  if (!organisations.length) return period;
 
+  // Baca REPORTS sekali dan indeks organisasi bagi tempoh ini.
+  // Elakkan 24 panggilan findReport_ yang setiap satunya membaca seluruh sheet.
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    throw new Error('Sistem sedang memproses laporan. Sila cuba semula sebentar lagi.');
+  }
 
-  /*
-   * Pastikan bulan semasa wujud.
-   */
-  const period =
-    createOrGetCurrentPeriod_();
+  try {
+    const sheet = getRequiredSheet_(SHEETS.REPORTS);
+    const lastRow = sheet.getLastRow();
+    const lastColumn = sheet.getLastColumn();
+    if (lastColumn < 1) throw new Error('REPORTS tidak mempunyai header.');
 
-
-  /*
-   * Pastikan setiap organisasi aktif
-   * mempunyai satu report.
-   */
-  const organisations =
-    getActiveOrganisations_();
-
-
-  organisations.forEach(
-    function(org) {
-
-      getOrCreateReport_(
-        period.PeriodID,
-        org.OrganisationID
-      );
-
+    const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0].map(String);
+    const periodIndex = headers.indexOf('PeriodID');
+    const organisationIndex = headers.indexOf('OrganisationID');
+    if (periodIndex < 0 || organisationIndex < 0) {
+      throw new Error('Kolum PeriodID atau OrganisationID tidak dijumpai dalam REPORTS.');
     }
-  );
 
+    const existing = new Set();
+    if (lastRow >= 2) {
+      const values = sheet.getRange(2, 1, lastRow - 1, lastColumn).getValues();
+      values.forEach(function(row) {
+        if (normalizePeriodId_(row[periodIndex]) === normalizePeriodId_(period.PeriodID)) {
+          existing.add(String(row[organisationIndex] || '').trim());
+        }
+      });
+    }
+
+    const missing = organisations.filter(function(org) {
+      return !existing.has(String(org.OrganisationID || '').trim());
+    });
+
+    if (missing.length) {
+      const rows = missing.map(function(org) {
+        const row = new Array(headers.length).fill('');
+        setByHeader_(headers, row, 'ReportID', 'R-' + Utilities.getUuid());
+        setByHeader_(headers, row, 'PeriodID', period.PeriodID);
+        setByHeader_(headers, row, 'OrganisationID', org.OrganisationID);
+        setByHeader_(headers, row, 'Status', 'DRAFT');
+        setByHeader_(headers, row, 'CompletionPercent', 0);
+        setByHeader_(headers, row, 'UpdatedAt', new Date());
+        return row;
+      });
+
+      // Satu penulisan pukal, bukannya appendRow berulang.
+      sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, headers.length).setValues(rows);
+    }
+  } finally {
+    lock.releaseLock();
+  }
 
   return period;
 }
-
 
 /* ============================================================
    USER REPORTING PERIOD LIST
@@ -2866,184 +2890,56 @@ function assertEditable_(
    ============================================================ */
 
 function closeExpiredReportsAsSystem_() {
+  const db = getDb_();
+  const periodSheet = db.getSheetByName(SHEETS.PERIODS);
+  const reportSheet = db.getSheetByName(SHEETS.REPORTS);
+  if (!periodSheet || !reportSheet) return;
 
-  const periodSheet =
-    getDb_()
-      .getSheetByName(
-        SHEETS.PERIODS
-      );
+  const periodLastRow = periodSheet.getLastRow();
+  const periodLastColumn = periodSheet.getLastColumn();
+  if (periodLastRow < 2 || periodLastColumn < 1) return;
 
+  const periodValues = periodSheet.getRange(1, 1, periodLastRow, periodLastColumn).getValues();
+  const periodHeaders = periodValues[0].map(String);
+  const closeIndex = periodHeaders.indexOf('CloseDate');
+  const statusIndex = periodHeaders.indexOf('Status');
+  const periodIdIndex = periodHeaders.indexOf('PeriodID');
+  if (closeIndex < 0 || statusIndex < 0 || periodIdIndex < 0) return;
 
-  const reportSheet =
-    getDb_()
-      .getSheetByName(
-        SHEETS.REPORTS
-      );
-
-
-  if (
-    !periodSheet ||
-    !reportSheet
-  ) {
-    return;
-  }
-
-
-  const periodValues =
-    periodSheet
-      .getDataRange()
-      .getValues();
-
-
-  if (
-    periodValues.length < 2
-  ) {
-    return;
-  }
-
-
-  const headers =
-    periodValues.shift();
-
-
-  const closeIdx =
-    headers.indexOf(
-      'CloseDate'
-    );
-
-
-  const statusIdx =
-    headers.indexOf(
-      'Status'
-    );
-
-
-  const periodIdx =
-    headers.indexOf(
-      'PeriodID'
-    );
-
-
-  const now =
-    new Date();
-
-
-  const closedPeriods =
-    [];
-
-
-  periodValues.forEach(
-    function(row,index) {
-
-      const close =
-        parseDate_(
-          row[closeIdx]
-        );
-
-
-      if (
-        close &&
-        now > close &&
-        String(
-          row[statusIdx]
-        ).toUpperCase() !==
-        'CLOSED'
-      ) {
-
-        row[statusIdx] =
-          'CLOSED';
-
-
-        periodSheet
-          .getRange(
-            index + 2,
-            1,
-            1,
-            row.length
-          )
-          .setValues([row]);
-
-
-        closedPeriods.push(
-          String(
-            row[periodIdx]
-          )
-        );
-      }
+  const now = new Date();
+  const closedPeriods = new Set();
+  const periodStatusUpdates = periodValues.slice(1).map(function(row) {
+    const closeDate = parseDate_(row[closeIndex]);
+    const status = String(row[statusIndex] || '').trim().toUpperCase();
+    if (closeDate && now > closeDate && status !== 'CLOSED') {
+      closedPeriods.add(String(row[periodIdIndex] || '').trim());
+      return ['CLOSED'];
     }
-  );
+    return [row[statusIndex]];
+  });
 
+  if (!closedPeriods.size) return;
 
-  if (
-    !closedPeriods.length
-  ) {
-    return;
-  }
+  // Kemaskini satu kolum secara pukal, bukan setValues bagi setiap baris.
+  periodSheet.getRange(2, statusIndex + 1, periodStatusUpdates.length, 1).setValues(periodStatusUpdates);
 
+  const reportLastRow = reportSheet.getLastRow();
+  const reportLastColumn = reportSheet.getLastColumn();
+  if (reportLastRow < 2 || reportLastColumn < 1) return;
 
-  const reportValues =
-    reportSheet
-      .getDataRange()
-      .getValues();
+  const reportValues = reportSheet.getRange(1, 1, reportLastRow, reportLastColumn).getValues();
+  const reportHeaders = reportValues[0].map(String);
+  const reportPeriodIndex = reportHeaders.indexOf('PeriodID');
+  const reportStatusIndex = reportHeaders.indexOf('Status');
+  if (reportPeriodIndex < 0 || reportStatusIndex < 0) return;
 
+  const reportStatusUpdates = reportValues.slice(1).map(function(row) {
+    const pid = String(row[reportPeriodIndex] || '').trim();
+    return [closedPeriods.has(pid) ? 'CLOSED' : row[reportStatusIndex]];
+  });
 
-  if (
-    reportValues.length < 2
-  ) {
-    return;
-  }
-
-
-  const reportHeaders =
-    reportValues.shift();
-
-
-  const reportPeriodIdx =
-    reportHeaders.indexOf(
-      'PeriodID'
-    );
-
-
-  const reportStatusIdx =
-    reportHeaders.indexOf(
-      'Status'
-    );
-
-
-  const closedSet =
-    new Set(
-      closedPeriods
-    );
-
-
-  reportValues.forEach(
-    function(row,index) {
-
-      if (
-        closedSet.has(
-          String(
-            row[reportPeriodIdx]
-          )
-        )
-      ) {
-
-        row[reportStatusIdx] =
-          'CLOSED';
-
-
-        reportSheet
-          .getRange(
-            index + 2,
-            1,
-            1,
-            row.length
-          )
-          .setValues([row]);
-      }
-    }
-  );
+  reportSheet.getRange(2, reportStatusIndex + 1, reportStatusUpdates.length, 1).setValues(reportStatusUpdates);
 }
-
 
 /* ============================================================
    ORGANISATION
