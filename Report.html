@@ -669,15 +669,42 @@ async function submitReport(){
       return;
     }
 
+    // Server memulangkan borang terkini selepas status ditukar kepada SUBMITTED.
+    // Gunakan respons ini untuk mengemas kini paparan tanpa refresh manual.
+    if(result.form){
+      data=result.form;
+      data.report=data.report||{};
+      data.period=data.period||{};
+      data.modules=data.modules||[];
+      data.itemStatus=data.itemStatus||{};
+      data.activities=data.activities||[];
+      data.finance=data.finance||[];
+      data.bkpsSpecial=data.bkpsSpecial||[];
+      activities=data.activities.map(normalizeActivity);
+      finance=data.finance.map(function(x){return Object.assign({},x);});
+      bkps=data.bkpsSpecial.map(function(x){return Object.assign({},x);});
+    }else if(result.report){
+      data.report=Object.assign({},data.report,result.report);
+      data.report.Status='SUBMITTED';
+    }
+
+    if(data.report)data.report.Status='SUBMITTED';
+    data.editable=false;
+
     setSubmitProgress(100,'Laporan berjaya dihantar');
     if($('saveState'))$('saveState').textContent='✓ Laporan berjaya dihantar';
     if($('bottomSaveState'))$('bottomSaveState').textContent='✓ Laporan berjaya dihantar';
 
-    // Beri masa singkat supaya pengguna nampak 100%, kemudian kembali
-    // ke halaman utama. Jangan gunakan location.reload() kerana ia boleh
-    // menghasilkan skrin putih dalam iframe Web App.
+    render();
+    enforceExaminationNumberFields();
+    if(topBtn)topBtn.disabled=true;
+    if(bottomBtn)bottomBtn.disabled=true;
+    if($('saveBtn'))$('saveBtn').disabled=true;
+    if($('bottomSaveBtn'))$('bottomSaveBtn').disabled=true;
+
+    // Paparkan status SUBMITTED dahulu, kemudian tutup overlay proses.
     await new Promise(r=>setTimeout(r,700));
-    await navigateMainPage();
+    hideSubmitProgress();
 
   }catch(e){
     alert('Gagal menghantar laporan:\n'+(e&&e.message?e.message:String(e)));
