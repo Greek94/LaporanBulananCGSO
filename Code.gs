@@ -2294,24 +2294,30 @@ function replaceActivities_(
     );
 
 
-  for (
-    let i = values.length - 1;
-    i >= 0;
-    i--
-  ) {
-
-    if (
-      String(
-        values[i][reportIdx]
-      ) === String(
-        reportId
-      )
-    ) {
-
-      sheet.deleteRow(
-        i + 2
-      );
+  // Cari baris laporan yang perlu diganti, kemudian padankan ke julat
+  // berturutan. deleteRows() secara berturutan mengelakkan panggilan deleteRow
+  // satu demi satu untuk setiap aktiviti.
+  const rowsToDelete = [];
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][reportIdx]) === String(reportId)) {
+      rowsToDelete.push(i + 2); // header berada pada baris 1
     }
+  }
+
+  const deleteRanges = [];
+  rowsToDelete.forEach(function(rowNumber) {
+    const last = deleteRanges[deleteRanges.length - 1];
+    if (last && rowNumber === last.start + last.count) {
+      last.count++;
+    } else {
+      deleteRanges.push({ start: rowNumber, count: 1 });
+    }
+  });
+
+  // Padam dari bawah ke atas supaya indeks baris kekal tepat.
+  for (let i = deleteRanges.length - 1; i >= 0; i--) {
+    const range = deleteRanges[i];
+    sheet.deleteRows(range.start, range.count);
   }
 
 
