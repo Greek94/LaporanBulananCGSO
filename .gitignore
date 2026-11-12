@@ -1,0 +1,8 @@
+# Google clasp credentials/configuration - never commit these
+.clasprc.json
+.clasp.json
+
+# Local development
+node_modules/
+.DS_Store
+*.log
