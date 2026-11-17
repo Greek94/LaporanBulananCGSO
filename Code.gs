@@ -591,6 +591,12 @@ function getDashboardData() {
               report.Status || 'DRAFT'
             ).trim().toUpperCase();
 
+            // SubmittedAt ialah bukti penghantaran (rekod lama mungkin
+            // telah ditukar kepada CLOSED oleh versi kod terdahulu).
+            if (report.SubmittedAt) {
+              status = 'SUBMITTED';
+            }
+
             completion = Number(
               report.CompletionPercent || 0
             );
@@ -1474,7 +1480,27 @@ function getReportForm(
     modules:
       getModulesForOrganisation_(
         report.OrganisationID
-      )
+      ),
+
+    finance:
+      hasModule_(report.OrganisationID, 'FINANCE_BKP')
+        ? getFinanceRows_(reportId)
+        : [],
+
+    bkpsSpecial:
+      hasModule_(report.OrganisationID, 'SPECIAL_BKPS')
+        ? getBkpsRows_(reportId)
+        : []
+  });
+}
+
+
+function hasModule_(
+  organisationId,
+  moduleCode
+) {
+  return getModulesForOrganisation_(organisationId).some(function(m) {
+    return String(m.ModuleCode || '').trim().toUpperCase() === moduleCode;
   });
 }
 
@@ -1581,6 +1607,33 @@ function saveReportFormUnlocked_(
     allowed,
     user.userId
   );
+
+  /*
+   * Modul khas: hanya disimpan jika organisasi mempunyai modul tersebut
+   * dalam ORGANISATION_MODULE_ACCESS.
+   */
+  const moduleCodes =
+    getModulesForOrganisation_(
+      report.OrganisationID
+    ).map(function(m) {
+      return String(m.ModuleCode || '').trim().toUpperCase();
+    });
+
+  if (moduleCodes.indexOf('FINANCE_BKP') >= 0) {
+    replaceFinanceRows_(
+      reportId,
+      formData && Array.isArray(formData.finance) ? formData.finance : [],
+      user.userId
+    );
+  }
+
+  if (moduleCodes.indexOf('SPECIAL_BKPS') >= 0) {
+    replaceBkpsRows_(
+      reportId,
+      formData && Array.isArray(formData.bkpsSpecial) ? formData.bkpsSpecial : [],
+      user.userId
+    );
+  }
 
   SpreadsheetApp.flush();
 
@@ -2054,31 +2107,12 @@ function replaceActivities_(
     );
 
 
-  // Cari baris laporan yang perlu diganti, kemudian padankan ke julat
-  // berturutan. deleteRows() secara berturutan mengelakkan panggilan deleteRow
-  // satu demi satu untuk setiap aktiviti.
-  const rowsToDelete = [];
-  for (let i = 0; i < values.length; i++) {
-    if (String(values[i][reportIdx]) === String(reportId)) {
-      rowsToDelete.push(i + 2); // header berada pada baris 1
-    }
-  }
-
-  const deleteRanges = [];
-  rowsToDelete.forEach(function(rowNumber) {
-    const last = deleteRanges[deleteRanges.length - 1];
-    if (last && rowNumber === last.start + last.count) {
-      last.count++;
-    } else {
-      deleteRanges.push({ start: rowNumber, count: 1 });
-    }
-  });
-
-  // Padam dari bawah ke atas supaya indeks baris kekal tepat.
-  for (let i = deleteRanges.length - 1; i >= 0; i--) {
-    const range = deleteRanges[i];
-    sheet.deleteRows(range.start, range.count);
-  }
+  deleteRowsForReport_(
+    sheet,
+    values,
+    reportIdx,
+    reportId
+  );
 
 
   const rows = [];
@@ -2135,7 +2169,7 @@ function replaceActivities_(
           headers,
           row,
           'StartDate',
-          activity.startDate || ''
+          safeText_(activity.startDate, 20)
         );
 
 
@@ -2143,7 +2177,7 @@ function replaceActivities_(
           headers,
           row,
           'EndDate',
-          activity.endDate || ''
+          safeText_(activity.endDate, 20)
         );
 
 
@@ -2151,7 +2185,7 @@ function replaceActivities_(
           headers,
           row,
           'TimeStart',
-          activity.timeStart || ''
+          safeText_(activity.timeStart, 20)
         );
 
 
@@ -2159,7 +2193,7 @@ function replaceActivities_(
           headers,
           row,
           'TimeEnd',
-          activity.timeEnd || ''
+          safeText_(activity.timeEnd, 20)
         );
 
 
@@ -2167,7 +2201,7 @@ function replaceActivities_(
           headers,
           row,
           'Title',
-          activity.title || ''
+          safeText_(activity.title)
         );
 
 
@@ -2175,7 +2209,7 @@ function replaceActivities_(
           headers,
           row,
           'Agency',
-          activity.agency || ''
+          safeText_(activity.agency)
         );
 
 
@@ -2183,7 +2217,7 @@ function replaceActivities_(
           headers,
           row,
           'Location',
-          activity.location || ''
+          safeText_(activity.location)
         );
 
 
@@ -2191,7 +2225,7 @@ function replaceActivities_(
           headers,
           row,
           'LocationType',
-          activity.locationType || ''
+          safeText_(activity.locationType)
         );
 
 
@@ -2199,7 +2233,7 @@ function replaceActivities_(
           headers,
           row,
           'Officers',
-          activity.officers || ''
+          safeText_(activity.officers)
         );
 
 
@@ -2207,7 +2241,7 @@ function replaceActivities_(
           headers,
           row,
           'Speakers',
-          activity.speakers || ''
+          safeText_(activity.speakers)
         );
 
 
@@ -2255,7 +2289,7 @@ function replaceActivities_(
           headers,
           row,
           'Notes',
-          activity.notes || ''
+          safeText_(activity.notes)
         );
 
 
@@ -2300,6 +2334,266 @@ function replaceActivities_(
 
     target.setValues(rows);
   }
+}
+
+
+
+/* ============================================================
+   MODUL KHAS: KEWANGAN BKP & TAPISAN BKPS
+   ============================================================ */
+
+/**
+ * Padam semua baris milik reportId dalam sheet, dari bawah ke atas,
+ * menggunakan julat berturutan. MESTI dipanggil dalam withWriteLock_().
+ *
+ * @param values  data tanpa baris header (baris 2 = values[0])
+ */
+function deleteRowsForReport_(
+  sheet,
+  values,
+  reportIdx,
+  reportId
+) {
+  if (reportIdx < 0) {
+    throw new Error('Kolum ReportID tidak dijumpai dalam ' + sheet.getName() + '.');
+  }
+
+  const rowsToDelete = [];
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][reportIdx]) === String(reportId)) {
+      rowsToDelete.push(i + 2);
+    }
+  }
+
+  const ranges = [];
+  rowsToDelete.forEach(function(rowNumber) {
+    const last = ranges[ranges.length - 1];
+    if (last && rowNumber === last.start + last.count) {
+      last.count++;
+    } else {
+      ranges.push({ start: rowNumber, count: 1 });
+    }
+  });
+
+  for (let i = ranges.length - 1; i >= 0; i--) {
+    sheet.deleteRows(ranges[i].start, ranges[i].count);
+  }
+}
+
+
+/**
+ * Ganti semua baris sesuatu laporan dalam sheet dengan rows baharu.
+ * rows = array objek {NamaHeader: nilai}.
+ */
+function replaceReportRows_(
+  sheetName,
+  reportId,
+  rows
+) {
+  const sheet = getRequiredSheet_(sheetName);
+  const values = sheet.getDataRange().getValues();
+  if (!values.length) {
+    throw new Error(sheetName + ' tidak mempunyai header.');
+  }
+
+  const headers = values.shift().map(String);
+
+  deleteRowsForReport_(
+    sheet,
+    values,
+    headers.indexOf('ReportID'),
+    reportId
+  );
+
+  if (!rows.length) return;
+
+  const output = rows.map(function(obj) {
+    return headers.map(function(h) {
+      return Object.prototype.hasOwnProperty.call(obj, h) ? obj[h] : '';
+    });
+  });
+
+  sheet
+    .getRange(sheet.getLastRow() + 1, 1, output.length, headers.length)
+    .setValues(output);
+}
+
+
+/**
+ * Ambil nilai medan tanpa mengira huruf besar/kecil (Category / category).
+ * Borang memuatkan rekod dengan kunci huruf besar (dari Sheet) dan menulis
+ * suntingan pengguna dengan kunci huruf kecil, jadi huruf kecil diutamakan.
+ */
+function pick_(
+  obj,
+  name
+) {
+  if (!obj) return '';
+  const lower = name.charAt(0).toLowerCase() + name.slice(1);
+  if (obj[lower] !== undefined && obj[lower] !== null) return obj[lower];
+  if (obj[name] !== undefined && obj[name] !== null) return obj[name];
+  return '';
+}
+
+
+function getFinanceRows_(
+  reportId
+) {
+  return getRecordsByReportIdFromSheet_(SHEETS.FINANCE, reportId);
+}
+
+
+function replaceFinanceRows_(
+  reportId,
+  finance,
+  userId
+) {
+  const now = new Date();
+
+  const rows = (finance || [])
+    .filter(function(x) {
+      // Abaikan baris kosong sepenuhnya.
+      return ['Category', 'Code', 'Description', 'Approved', 'Revised', 'Actual', 'Commitment']
+        .some(function(k) { return String(pick_(x, k)).trim() !== '' && String(pick_(x, k)) !== '0'; });
+    })
+    .slice(0, 200)
+    .map(function(x) {
+      const approved = Number(num_(pick_(x, 'Approved')) || 0);
+      const revised = Number(num_(pick_(x, 'Revised')) || 0);
+      const actual = Number(num_(pick_(x, 'Actual')) || 0);
+      const commitment = Number(num_(pick_(x, 'Commitment')) || 0);
+
+      // Peruntukan berkuat kuasa = pindaan jika ada, jika tidak peruntukan asal.
+      const base = revised || approved;
+      const used = actual + commitment;
+
+      return {
+        FinanceID: String(pick_(x, 'FinanceID')).trim() || 'F-' + Utilities.getUuid(),
+        ReportID: reportId,
+        Category: safeText_(pick_(x, 'Category'), 200),
+        Code: safeText_(pick_(x, 'Code'), 50),
+        Description: safeText_(pick_(x, 'Description'), 500),
+        Approved: approved,
+        Revised: revised,
+        Actual: actual,
+        Commitment: commitment,
+        Balance: Math.round((base - used) * 100) / 100,
+        Percentage: base ? Math.round(used / base * 10000) / 100 : 0,
+        UpdatedBy: userId,
+        UpdatedAt: now
+      };
+    });
+
+  replaceReportRows_(SHEETS.FINANCE, reportId, rows);
+}
+
+
+/**
+ * Senarai lokasi tapisan BKPS: BKPS + semua Pejabat CGSO Negeri/Wilayah aktif.
+ */
+function getBkpsLocations_() {
+  const orgs = getActiveOrganisations_();
+  const locations = [{ LocationCode: 'BKPS', LocationName: 'Bahagian Keselamatan Personel (BKPS)' }];
+
+  orgs
+    .filter(function(o) {
+      const type = String(o.Type || '').trim().toUpperCase();
+      return type === 'NEGERI' || type === 'WILAYAH';
+    })
+    .forEach(function(o) {
+      locations.push({
+        LocationCode: String(o.Code || o.OrganisationID),
+        LocationName: String(o.OrganisationName || o.Code)
+      });
+    });
+
+  return locations.map(function(loc, i) {
+    loc.DisplayOrder = i + 1;
+    return loc;
+  });
+}
+
+
+/**
+ * Rekod BKPS bagi laporan. Jika belum ada, pulangkan senarai lokasi
+ * lalai dengan nilai 0 supaya jadual dalam borang tidak kosong.
+ */
+function getBkpsRows_(
+  reportId
+) {
+  const saved = getRecordsByReportIdFromSheet_(SHEETS.BKPS, reportId);
+  const byCode = {};
+  saved.forEach(function(r) { byCode[String(r.LocationCode)] = r; });
+
+  const merged = getBkpsLocations_().map(function(loc) {
+    const r = byCode[loc.LocationCode];
+    delete byCode[loc.LocationCode];
+    return {
+      RecordID: r ? r.RecordID : '',
+      LocationCode: loc.LocationCode,
+      LocationName: loc.LocationName,
+      DisplayOrder: loc.DisplayOrder,
+      DecisionsReceived: r ? Number(r.DecisionsReceived || 0) : 0,
+      DecisionsProcessed: r ? Number(r.DecisionsProcessed || 0) : 0
+    };
+  });
+
+  // Kekalkan rekod lama bagi lokasi yang tiada lagi dalam senarai.
+  Object.keys(byCode).forEach(function(code) {
+    merged.push(byCode[code]);
+  });
+
+  return merged;
+}
+
+
+function replaceBkpsRows_(
+  reportId,
+  rowsIn,
+  userId
+) {
+  const now = new Date();
+  const allowed = {};
+  getBkpsLocations_().forEach(function(loc) { allowed[loc.LocationCode] = loc; });
+
+  const rows = (rowsIn || [])
+    .filter(function(x) { return allowed[String(pick_(x, 'LocationCode'))]; })
+    .map(function(x) {
+      const loc = allowed[String(pick_(x, 'LocationCode'))];
+      const received = Math.max(0, Math.floor(Number(num_(pick_(x, 'DecisionsReceived')) || 0)));
+      const processed = Math.max(0, Math.floor(Number(num_(pick_(x, 'DecisionsProcessed')) || 0)));
+      return {
+        RecordID: String(pick_(x, 'RecordID')).trim() || 'B-' + Utilities.getUuid(),
+        ReportID: reportId,
+        LocationCode: loc.LocationCode,
+        LocationName: loc.LocationName,
+        DisplayOrder: loc.DisplayOrder,
+        DecisionsReceived: received,
+        DecisionsProcessed: processed,
+        UpdatedBy: userId,
+        UpdatedAt: now
+      };
+    });
+
+  replaceReportRows_(SHEETS.BKPS, reportId, rows);
+}
+
+
+/**
+ * Bersihkan teks pengguna sebelum ditulis ke Sheet:
+ * - had panjang
+ * - elak formula injection (=, +, -, @ di awal teks dijadikan teks biasa)
+ */
+function safeText_(
+  value,
+  maxLength
+) {
+  let text = String(value === null || value === undefined ? '' : value).trim();
+  text = text.slice(0, maxLength || 2000);
+  if (/^[=+\-@\t\r]/.test(text)) {
+    text = "'" + text;
+  }
+  return text;
 }
 
 
@@ -2748,9 +3042,24 @@ function closeExpiredReportsAsSystem_() {
   const reportStatusIndex = reportHeaders.indexOf('Status');
   if (reportPeriodIndex < 0 || reportStatusIndex < 0) return;
 
+  const reportSubmittedAtIndex = reportHeaders.indexOf('SubmittedAt');
+
+  /*
+   * Hanya laporan yang BELUM dihantar ditukar kepada CLOSED.
+   * Laporan SUBMITTED kekal SUBMITTED supaya dashboard sejarah
+   * boleh membezakan "dihantar" dengan "tidak dihantar".
+   */
   const reportStatusUpdates = reportValues.slice(1).map(function(row) {
     const pid = normalizePeriodId_(row[reportPeriodIndex]);
-    return [closedPeriods.has(pid) ? 'CLOSED' : row[reportStatusIndex]];
+    const status = String(row[reportStatusIndex] || '').trim().toUpperCase();
+    const submitted =
+      status === 'SUBMITTED' ||
+      (reportSubmittedAtIndex >= 0 && row[reportSubmittedAtIndex] !== '' && row[reportSubmittedAtIndex] !== null);
+
+    if (closedPeriods.has(pid) && !submitted) {
+      return ['CLOSED'];
+    }
+    return [row[reportStatusIndex]];
   });
 
   reportSheet.getRange(2, reportStatusIndex + 1, reportStatusUpdates.length, 1).setValues(reportStatusUpdates);
@@ -3462,148 +3771,8 @@ function saveAdminUser(payload) {
   return {ok:true,message:'Profil pengguna dan peranan berjaya disimpan.'};
 }
 
-function getActiveUsersByOrganisation_(
-  organisationId
-) {
-
-  const sheet =
-    getRequiredSheet_(
-      SHEETS.USERS
-    );
-
-
-  const values =
-    sheet
-      .getDataRange()
-      .getValues();
-
-
-  if (
-    values.length < 2
-  ) {
-    return [];
-  }
-
-
-  const headers =
-    values.shift();
-
-
-  return values
-
-    .map(
-      function(row) {
-
-        return rowToObject_(
-          headers,
-          row
-        );
-
-      }
-    )
-
-    .filter(
-      function(user) {
-
-        return String(
-          user.OrganisationID
-        ) === String(
-          organisationId
-        );
-
-      }
-    )
-
-    .filter(
-      function(user) {
-
-        return String(
-          user.Status
-        ).toUpperCase() ===
-        'ACTIVE';
-
-      }
-    );
-}
-
-
-function getActiveUsersByRole_(
-  roles
-) {
-
-  const wanted =
-    new Set(
-      roles.map(
-        function(role) {
-
-          return String(
-            role
-          ).toUpperCase();
-
-        }
-      )
-    );
-
-
-  const sheet =
-    getRequiredSheet_(
-      SHEETS.USERS
-    );
-
-
-  const values =
-    sheet
-      .getDataRange()
-      .getValues();
-
-
-  if (
-    values.length < 2
-  ) {
-    return [];
-  }
-
-
-  const headers =
-    values.shift();
-
-
-  return values
-
-    .map(
-      function(row) {
-
-        return rowToObject_(
-          headers,
-          row
-        );
-
-      }
-    )
-
-    .filter(
-      function(user) {
-
-        return wanted.has(
-          String(
-            user.Role
-          ).toUpperCase()
-        );
-
-      }
-    )
-
-    .filter(
-      function(user) {
-
-        return String(
-          user.Status
-        ).toUpperCase() ===
-        'ACTIVE';
-
-      }
-    );
-}
+/* getActiveUsersByOrganisation_() dan getActiveUsersByRole_() digantikan
+   oleh getActiveUsersWithRoles_() yang menyokong USER_ROLES. */
 
 
 /* ============================================================
@@ -3644,22 +3813,9 @@ function sendSubmissionNotifications_(
     new Map();
 
 
-  getActiveUsersByOrganisation_(
+  getActiveUsersWithRoles_(
+    ['PREPARER', 'SUPERVISOR'],
     report.OrganisationID
-  )
-  .filter(
-    function(user) {
-
-      return [
-        'PREPARER',
-        'SUPERVISOR'
-      ].includes(
-        String(
-          user.Role
-        ).toUpperCase()
-      );
-
-    }
   )
   .forEach(
     function(user) {
@@ -3678,7 +3834,7 @@ function sendSubmissionNotifications_(
   );
 
 
-  getActiveUsersByRole_([
+  getActiveUsersWithRoles_([
     'ADMIN',
     'SECRETARIAT'
   ])
@@ -3756,7 +3912,19 @@ function sendSubmissionNotifications_(
             period.Year +
             '</p>' +
 
-            '<p><b>Status:</b> SUBMITTED</p>'
+            '<p><b>Status:</b> DIHANTAR</p>' +
+
+            '<p><b>Masa hantar:</b> ' +
+            escapeHtml_(
+              formatDateTime_(report.SubmittedAt)
+            ) +
+            '</p>' +
+
+            '<p><b>No. rujukan:</b> ' +
+            escapeHtml_(report.ReportID) +
+            '</p>' +
+
+            '<p style="color:#666;font-size:12px">E-mel pengesahan ini dijana secara automatik.</p>'
         });
 
 
@@ -3792,140 +3960,279 @@ function sendSubmissionNotifications_(
    REMINDER
    ============================================================ */
 
+/**
+ * Hantar peringatan kepada PREPARER/SUPERVISOR organisasi yang
+ * belum menghantar laporan bagi tempoh tersebut.
+ *
+ * @param period    objek tempoh (PeriodID, Month, Year, CloseDate)
+ * @param daysLeft  bilangan hari sebelum tarikh tutup (0 = hari terakhir)
+ */
 function sendReminderEmails_(
+  period,
+  daysLeft
+) {
+
+  const pid = normalizePeriodId_(period.PeriodID);
+  const reports = getReportsByPeriod_(pid);
+  const closeText = formatDateTime_(period.CloseDate);
+  const webAppUrl = ScriptApp.getService().getUrl() || '';
+
+  const label =
+    daysLeft === 0
+      ? 'HARI TERAKHIR'
+      : daysLeft + ' hari lagi';
+
+  let sent = 0;
+
+  getActiveOrganisations_().forEach(function(organisation) {
+
+    const orgReports = reports.filter(function(r) {
+      return String(r.OrganisationID) === String(organisation.OrganisationID);
+    });
+
+    const submitted = orgReports.some(function(r) {
+      return r.SubmittedAt ||
+        String(r.Status || '').trim().toUpperCase() === 'SUBMITTED';
+    });
+
+    if (submitted) return;
+
+    const report = findBestReportRecord_(orgReports);
+
+    getActiveUsersWithRoles_(
+      ['PREPARER', 'SUPERVISOR'],
+      organisation.OrganisationID
+    ).forEach(function(user) {
+
+      if (!user.Email) return;
+
+      try {
+        MailApp.sendEmail({
+          to: user.Email,
+          subject:
+            '[PERINGATAN CGSO] ' + label + ' — Laporan ' +
+            period.Month + ' ' + period.Year +
+            ' belum dihantar (' + organisation.Code + ')',
+          htmlBody:
+            '<h2>Peringatan Laporan Bulanan CGSO</h2>' +
+            '<p>Laporan bulan <b>' + escapeHtml_(period.Month) + ' ' + escapeHtml_(period.Year) +
+            '</b> bagi <b>' + escapeHtml_(organisation.OrganisationName) +
+            '</b> masih belum dihantar.</p>' +
+            '<p><b>Tarikh tutup:</b> ' + escapeHtml_(closeText) + '</p>' +
+            (daysLeft === 0
+              ? '<p style="color:#b42318"><b>Hari ini ialah hari terakhir penghantaran.</b></p>'
+              : '') +
+            (webAppUrl
+              ? '<p><a href="' + escapeHtml_(webAppUrl) + '">Buka Sistem Laporan Bulanan CGSO</a></p>'
+              : '') +
+            '<p style="color:#666;font-size:12px">E-mel ini dijana secara automatik.</p>'
+        });
+
+        logNotification_(report ? report.ReportID : '', 'REMINDER', user.Email, 'SENT', 'daysLeft=' + daysLeft);
+        sent++;
+      }
+
+      catch (err) {
+        logNotification_(report ? report.ReportID : '', 'REMINDER', user.Email, 'FAILED', String(err.message || err));
+      }
+    });
+  });
+
+  return sent;
+}
+
+
+/**
+ * Selepas tarikh tutup: hantar senarai organisasi yang tidak
+ * menghantar laporan kepada ADMIN/SECRETARIAT (dan SECRETARIAT_EMAIL).
+ */
+function sendLateSummaryEmail_(
   period
 ) {
 
-  const reports =
-    getAllReports_()
-      .filter(
-        function(report) {
+  const pid = normalizePeriodId_(period.PeriodID);
+  const reports = getReportsByPeriod_(pid);
 
-          return normalizePeriodId_(
-            report.PeriodID
-          ) === normalizePeriodId_(
-            period.PeriodID
-          );
+  const late = getActiveOrganisations_().filter(function(organisation) {
+    return !reports.some(function(r) {
+      return String(r.OrganisationID) === String(organisation.OrganisationID) &&
+        (r.SubmittedAt || String(r.Status || '').trim().toUpperCase() === 'SUBMITTED');
+    });
+  });
 
-        }
-      );
+  const recipients = {};
+  getActiveUsersWithRoles_(['ADMIN', 'SECRETARIAT']).forEach(function(u) {
+    if (u.Email) recipients[String(u.Email).toLowerCase()] = u.Email;
+  });
 
+  const extra = String(getConfig_().SECRETARIAT_EMAIL || '').trim();
+  if (extra) recipients[extra.toLowerCase()] = extra;
 
-  getActiveOrganisations_()
-    .forEach(
-      function(organisation) {
+  const total = getActiveOrganisations_().length;
 
-        const report =
-          reports.find(
-            function(item) {
+  const listHtml = late.length
+    ? '<ol>' + late.map(function(o) {
+        return '<li>' + escapeHtml_(o.Code) + ' — ' + escapeHtml_(o.OrganisationName) + '</li>';
+      }).join('') + '</ol>'
+    : '<p>Semua organisasi telah menghantar laporan.</p>';
 
-              return String(
-                item.OrganisationID
-              ) === String(
-                organisation.OrganisationID
-              );
-
-            }
-          );
-
-
-        if (
-          !report ||
-          [
-            'SUBMITTED',
-            'CLOSED'
-          ].includes(
-            String(
-              report.Status
-            ).toUpperCase()
-          )
-        ) {
-
-          return;
-        }
-
-
-        getActiveUsersByOrganisation_(
-          organisation.OrganisationID
-        )
-        .filter(
-          function(user) {
-
-            return [
-              'PREPARER',
-              'SUPERVISOR'
-            ].includes(
-              String(
-                user.Role
-              ).toUpperCase()
-            );
-
-          }
-        )
-        .forEach(
-          function(user) {
-
-            try {
-
-              MailApp.sendEmail({
-
-                to:
-                  user.Email,
-
-                subject:
-                  '[PERINGATAN CGSO] Laporan ' +
-                  period.Month +
-                  ' ' +
-                  period.Year +
-                  ' belum dihantar — ' +
-                  organisation.Code,
-
-                htmlBody:
-                  '<h2>PERINGATAN LAPORAN BULANAN CGSO</h2>' +
-
-                  '<p>Laporan bagi <b>' +
-                  escapeHtml_(
-                    organisation.OrganisationName
-                  ) +
-                  '</b> masih belum dihantar.</p>' +
-
-                  '<p><b>Tarikh tutup:</b> ' +
-                  escapeHtml_(
-                    formatDateTime_(
-                      period.CloseDate
-                    )
-                  ) +
-                  '</p>'
-              });
+  Object.keys(recipients).forEach(function(key) {
+    const email = recipients[key];
+    try {
+      MailApp.sendEmail({
+        to: email,
+        subject:
+          '[CGSO] Ringkasan penghantaran ' + period.Month + ' ' + period.Year +
+          ' — ' + (total - late.length) + '/' + total + ' dihantar',
+        htmlBody:
+          '<h2>Ringkasan Penghantaran Laporan Bulanan</h2>' +
+          '<p><b>Tempoh:</b> ' + escapeHtml_(period.Month) + ' ' + escapeHtml_(period.Year) + '</p>' +
+          '<p><b>Dihantar:</b> ' + (total - late.length) + ' daripada ' + total + ' organisasi</p>' +
+          '<h3>Belum / tidak menghantar (' + late.length + ')</h3>' +
+          listHtml
+      });
+      logNotification_('', 'LATE_SUMMARY', email, 'SENT', pid);
+    } catch (err) {
+      logNotification_('', 'LATE_SUMMARY', email, 'FAILED', String(err.message || err));
+    }
+  });
+}
 
 
-              logNotification_(
-                report.ReportID,
-                'REMINDER',
-                user.Email,
-                'SENT',
-                ''
-              );
+/**
+ * Berjalan setiap hari (trigger ~9 pagi).
+ *
+ * Jadual lalai (boleh diubah dalam CONFIG REMINDER_DAYS_BEFORE_CLOSE):
+ *   6,2,0  → bagi tarikh tutup 7hb: peringatan pada 1hb, 5hb dan 7hb.
+ * Sehari selepas tarikh tutup → ringkasan organisasi lewat kepada Urus Setia.
+ *
+ * Setiap jenis e-mel dihantar sekali sahaja sehari (PropertiesService),
+ * walaupun trigger berjalan lebih daripada sekali.
+ */
+function dailyReminderScheduler_() {
 
-            }
+  const tz = Session.getScriptTimeZone() || 'Asia/Kuala_Lumpur';
+  const props = PropertiesService.getScriptProperties();
+  const today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
 
-            catch (err) {
+  const dayNumber = function(date) {
+    // Bilangan hari kalendar (mengikut zon waktu skrip).
+    const ymd = Utilities.formatDate(date, tz, 'yyyy-MM-dd').split('-').map(Number);
+    return Math.round(Date.UTC(ymd[0], ymd[1] - 1, ymd[2]) / 86400000);
+  };
 
-              logNotification_(
-                report.ReportID,
-                'REMINDER',
-                user.Email,
-                'FAILED',
-                String(
-                  err.message || err
-                )
-              );
-            }
+  const todayNumber = dayNumber(new Date());
 
-          }
-        );
+  const reminderDays = String(getConfig_().REMINDER_DAYS_BEFORE_CLOSE || '6,2,0')
+    .split(',')
+    .map(function(v) { return Number(String(v).trim()); })
+    .filter(function(v) { return isFinite(v) && v >= 0; });
+
+  /* 1) Peringatan bagi tempoh yang sedang dibuka */
+  const period = getCurrentOpenPeriod_();
+
+  if (period && period.CloseDate) {
+    const daysLeft = dayNumber(period.CloseDate) - todayNumber;
+    const key = 'REMINDER_' + normalizePeriodId_(period.PeriodID) + '_' + today;
+
+    if (reminderDays.indexOf(daysLeft) >= 0 && !props.getProperty(key)) {
+      props.setProperty(key, '1');
+      sendReminderEmails_(period, daysLeft);
+    }
+  }
+
+  /* 2) Ringkasan lewat: tempoh yang tarikh tutupnya semalam */
+  const periodSheet = getDb_().getSheetByName(SHEETS.PERIODS);
+  if (!periodSheet || periodSheet.getLastRow() < 2) return;
+
+  const values = periodSheet.getDataRange().getValues();
+  const headers = values.shift().map(String);
+
+  values
+    .map(function(row) { return rowToObject_(headers, row); })
+    .forEach(function(p) {
+      const close = parseDate_(p.CloseDate);
+      if (!close) return;
+      if (todayNumber - dayNumber(close) !== 1) return;
+
+      const key = 'LATE_SUMMARY_' + normalizePeriodId_(p.PeriodID);
+      if (props.getProperty(key)) return;
+
+      props.setProperty(key, '1');
+      sendLateSummaryEmail_(p);
+    });
+}
+
+
+/**
+ * Pengguna aktif yang mempunyai sekurang-kurangnya satu peranan dalam roles.
+ * Peranan dibaca dari USER_ROLES (jatuh balik kepada USERS.Role).
+ * Jika organisationId diberi, hanya pengguna organisasi itu.
+ */
+function getActiveUsersWithRoles_(
+  roles,
+  organisationId
+) {
+
+  const wanted = roles.map(function(r) { return String(r).toUpperCase(); });
+
+  const sheet = getRequiredSheet_(SHEETS.USERS);
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) return [];
+  const headers = values.shift();
+
+  // Bina peta UserID -> [roles] sekali sahaja.
+  const roleMap = {};
+  const roleSheet = getDb_().getSheetByName('USER_ROLES');
+  if (roleSheet && roleSheet.getLastRow() >= 2) {
+    const rv = roleSheet.getDataRange().getValues();
+    const rh = rv.shift().map(String);
+    const ui = rh.indexOf('UserID'), ri = rh.indexOf('Role'), ai = rh.indexOf('IsActive');
+    rv.forEach(function(row) {
+      const active = String(row[ai] || '').trim().toUpperCase();
+      if (!(active === 'TRUE' || active === 'ACTIVE' || active === '1')) return;
+      const id = String(row[ui] || '').trim();
+      if (!roleMap[id]) roleMap[id] = [];
+      roleMap[id].push(String(row[ri] || '').trim().toUpperCase());
+    });
+  }
+
+  return values
+    .map(function(row) { return rowToObject_(headers, row); })
+    .filter(function(user) {
+      if (String(user.Status || '').toUpperCase() !== 'ACTIVE') return false;
+      if (organisationId !== undefined &&
+          String(user.OrganisationID || '').trim() !== String(organisationId).trim()) {
+        return false;
       }
-    );
+      const userRoles = roleMap[String(user.UserID || '').trim()] ||
+        [String(user.Role || '').trim().toUpperCase()];
+      return userRoles.some(function(r) { return wanted.indexOf(r) >= 0; });
+    });
+}
+
+
+/**
+ * Baca tab CONFIG (SettingKey -> SettingValue), cache 5 minit.
+ */
+function getConfig_() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('CGSO_CONFIG');
+  if (hit) {
+    try { return JSON.parse(hit); } catch (e) { /* abaikan */ }
+  }
+
+  const config = {};
+  const sheet = getDb_().getSheetByName(SHEETS.CONFIG);
+  if (sheet && sheet.getLastRow() >= 2) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues().forEach(function(row) {
+      const key = String(row[0] || '').trim();
+      if (key) config[key] = row[1];
+    });
+  }
+
+  cache.put('CGSO_CONFIG', JSON.stringify(config), 300);
+  return config;
 }
 
 
@@ -4030,19 +4337,7 @@ function systemScheduler_() {
 }
 
 
-function dailyReminderScheduler_() {
-
-  const period =
-    getCurrentOpenPeriod_();
-
-
-  if (period) {
-
-    sendReminderEmails_(
-      period
-    );
-  }
-}
+/* dailyReminderScheduler_() kini ditakrif dalam bahagian REMINDER. */
 
 
 /* ============================================================

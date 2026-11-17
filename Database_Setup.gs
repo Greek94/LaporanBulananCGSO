@@ -153,3 +153,50 @@ function normalizePeriodIdColumns() {
     lock.releaseLock();
   }
 }
+
+
+/**
+ * PENYELENGGARAAN SEKALI JALAN.
+ * Versi kod terdahulu menukar laporan SUBMITTED kepada CLOSED selepas
+ * tarikh tutup. Fungsi ini memulihkan Status = SUBMITTED bagi semua
+ * laporan yang mempunyai SubmittedAt. Tidak memadam sebarang baris.
+ *
+ * Jalankan dari editor Apps Script: restoreSubmittedStatus
+ */
+function restoreSubmittedStatus() {
+  assertAdminOrOwner_();
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('Sistem sibuk. Cuba lagi.');
+
+  try {
+    const sh = getRequiredSheet_('REPORTS');
+    const lastRow = sh.getLastRow();
+    const lastCol = sh.getLastColumn();
+    if (lastRow < 2) return { ok: true, restored: 0 };
+
+    const headers = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(String);
+    const statusCol = headers.indexOf('Status');
+    const submittedAtCol = headers.indexOf('SubmittedAt');
+    if (statusCol < 0 || submittedAtCol < 0) {
+      throw new Error('Kolum Status atau SubmittedAt tiada dalam REPORTS.');
+    }
+
+    const values = sh.getRange(2, 1, lastRow - 1, lastCol).getValues();
+    let restored = 0;
+    const statuses = values.map(function(row) {
+      const status = String(row[statusCol] || '').trim().toUpperCase();
+      if (status === 'CLOSED' && row[submittedAtCol] !== '' && row[submittedAtCol] !== null) {
+        restored++;
+        return ['SUBMITTED'];
+      }
+      return [row[statusCol]];
+    });
+
+    sh.getRange(2, statusCol + 1, statuses.length, 1).setValues(statuses);
+    writeAudit_('', 'SYSTEM', 'RESTORE_SUBMITTED_STATUS', 'Dipulihkan: ' + restored);
+    return { ok: true, restored: restored };
+  } finally {
+    lock.releaseLock();
+  }
+}
