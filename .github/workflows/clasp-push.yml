@@ -58,5 +58,23 @@ jobs:
       - name: Push source to Apps Script
         run: clasp push --force
 
-      - name: Create Apps Script version
-        run: clasp version "GitHub Actions ${GITHUB_SHA::7}"
+      - name: Create version and update web app deployment
+        shell: bash
+        env:
+          DEPLOYMENT_ID: ${{ secrets.APPS_SCRIPT_DEPLOYMENT_ID }}
+        run: |
+          set -euo pipefail
+          DESC="GitHub Actions ${GITHUB_SHA::7}"
+
+          if [ -n "${DEPLOYMENT_ID}" ]; then
+            # Kemas kini deployment sedia ada (URL web app kekal sama).
+            # clasp 3.x: create-deployment; clasp 2.x: deploy.
+            clasp create-deployment --deploymentId "${DEPLOYMENT_ID}" --description "${DESC}" \
+              || clasp deploy --deploymentId "${DEPLOYMENT_ID}" --description "${DESC}"
+            echo "Deployment ${DEPLOYMENT_ID} dikemas kini."
+          else
+            # Tiada APPS_SCRIPT_DEPLOYMENT_ID: cipta version sahaja.
+            # Pilih version baharu secara manual di Deploy > Manage deployments.
+            clasp create-version "${DESC}" || clasp version "${DESC}"
+            echo "::warning::Secret APPS_SCRIPT_DEPLOYMENT_ID tiada. Version dicipta tetapi web app BELUM dikemas kini."
+          fi

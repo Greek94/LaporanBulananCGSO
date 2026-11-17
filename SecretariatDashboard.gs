@@ -21,7 +21,12 @@ function getSecretariatDashboardV2(periodId) {
 
   const tz = Session.getScriptTimeZone() || 'Asia/Kuala_Lumpur';
   const months = ['Januari','Februari','Mac','April','Mei','Jun','Julai','Ogos','September','Oktober','November','Disember'];
-  const currentId = Utilities.formatDate(new Date(), tz, 'yyyy-MM');
+  // Lalai: tempoh terbuka yang paling hampir tutup (cth. pada 1–7 Dis,
+  // laporan November), bukan sekadar bulan kalendar semasa.
+  const openPeriod = getCurrentOpenPeriod_();
+  const currentId = openPeriod
+    ? normalizePeriodId_(openPeriod.PeriodID)
+    : Utilities.formatDate(new Date(), tz, 'yyyy-MM');
   const pid = normalizePeriodId_(periodId || currentId);
   const m = String(pid).match(/^(\d{4})-(\d{2})$/);
 
@@ -35,11 +40,12 @@ function getSecretariatDashboardV2(periodId) {
     PeriodID: pid,
     Month: months[monthNo - 1],
     Year: year,
-    Status: pid === currentId ? 'OPEN' : 'HISTORICAL',
     OpenDate: new Date(year, monthNo - 1, 1, 0, 0, 0),
     CloseDate: new Date(year, monthNo, 7, 23, 59, 59),
     Label: months[monthNo - 1] + ' ' + year
   };
+  // OPEN selagi belum melepasi tarikh tutup (tempoh lepas masih OPEN pada 1–7hb).
+  period.Status = new Date() <= period.CloseDate ? 'OPEN' : 'HISTORICAL';
 
   const periodReports = getReportsByPeriod_(pid) || [];
 
