@@ -57,6 +57,17 @@ function doGet(e) {
       e.parameter.page === 'health'
     ) {
 
+      const healthUser = getCurrentUser();
+      if (
+        !healthUser ||
+        healthUser.authorized !== true ||
+        !(hasRole_(healthUser, 'ADMIN') || hasRole_(healthUser, 'SECRETARIAT'))
+      ) {
+        return HtmlService.createHtmlOutput(
+          '<h2>Akses Ditolak</h2><p>Semakan sistem hanya untuk ADMIN atau SECRETARIAT.</p>'
+        );
+      }
+
       const health = healthCheck();
 
       return HtmlService
@@ -151,11 +162,14 @@ function doGet(e) {
 
   catch (err) {
 
+    // Jangan dedahkan stack trace kepada pengguna; log untuk pentadbir.
+    console.error(err && err.stack ? err.stack : err);
+
     return HtmlService.createHtmlOutput(
       '<h2>Ralat Sistem</h2>' +
-      '<pre>' +
-      escapeHtml_(err.stack || err.message || err) +
-      '</pre>'
+      '<p>' +
+      escapeHtml_(err && err.message ? err.message : err) +
+      '</p>'
     );
   }
 }
@@ -745,7 +759,10 @@ function getDashboardData() {
    ============================================================ */
 
 function ensureCurrentReportingCycle_() {
-  // Pastikan status tempoh lama dan tempoh semasa dikemas kini.
+  // Semua langkah dalam satu lock: closeExpiredReportsAsSystem_() menulis
+  // semula keseluruhan kolum Status dalam REPORTS. Tanpa lock, status
+  // SUBMITTED yang baru disimpan oleh pengguna boleh ditimpa nilai lama.
+  return withWriteLock_(function() {
   closeExpiredReportsAsSystem_();
   const period = createOrGetCurrentPeriod_();
   const organisations = getActiveOrganisations_() || [];
@@ -753,12 +770,7 @@ function ensureCurrentReportingCycle_() {
 
   // Baca REPORTS sekali dan indeks organisasi bagi tempoh ini.
   // Elakkan 24 panggilan findReport_ yang setiap satunya membaca seluruh sheet.
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(30000)) {
-    throw new Error('Sistem sedang memproses laporan. Sila cuba semula sebentar lagi.');
-  }
-
-  try {
+  {
     const sheet = getRequiredSheet_(SHEETS.REPORTS);
     const lastRow = sheet.getLastRow();
     const lastColumn = sheet.getLastColumn();
@@ -789,7 +801,7 @@ function ensureCurrentReportingCycle_() {
       const rows = missing.map(function(org) {
         const row = new Array(headers.length).fill('');
         setByHeader_(headers, row, 'ReportID', 'R-' + Utilities.getUuid());
-        setByHeader_(headers, row, 'PeriodID', period.PeriodID);
+        setByHeader_(headers, row, 'PeriodID', normalizePeriodId_(period.PeriodID));
         setByHeader_(headers, row, 'OrganisationID', org.OrganisationID);
         setByHeader_(headers, row, 'Status', 'DRAFT');
         setByHeader_(headers, row, 'CompletionPercent', 0);
@@ -798,67 +810,17 @@ function ensureCurrentReportingCycle_() {
       });
 
       // Satu penulisan pukal, bukannya appendRow berulang.
+      ensureTextColumn_(sheet, headers, 'PeriodID');
       sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, headers.length).setValues(rows);
     }
-  } finally {
-    lock.releaseLock();
   }
 
   return period;
-}
-
-/* ============================================================
-   USER REPORTING PERIOD LIST
-   Read-only list for month/year filters.
-   ============================================================ */
-
-function getUserReportingPeriods() {
-  const user = getCurrentUser();
-
-  if (!user || user.authorized !== true) {
-    throw new Error('Akses tidak dibenarkan.');
-  }
-
-  const sheet = getRequiredSheet_(SHEETS.PERIODS);
-  const values = sheet.getDataRange().getValues();
-
-  if (values.length < 2) return [];
-
-  const headers = values.shift();
-  const periodIndex = headers.indexOf('PeriodID');
-  if (periodIndex < 0) {
-    throw new Error('Kolum PeriodID tidak dijumpai dalam REPORT_PERIODS.');
-  }
-
-  const rows = values.map(function(row) {
-    const period = rowToObject_(headers, row);
-    const periodId = normalizePeriodId_(row[periodIndex]);
-    if (!periodId || !/^\d{4}-\d{2}$/.test(periodId)) return null;
-
-    const parts = periodId.split('-');
-    const year = Number(parts[0]);
-    const monthNumber = Number(parts[1]);
-    const monthNames = ['Januari','Februari','Mac','April','Mei','Jun',
-      'Julai','Ogos','September','Oktober','November','Disember'];
-
-    return {
-      PeriodID: periodId,
-      Month: monthNames[monthNumber - 1] || String(period.Month || ''),
-      Year: year,
-      Label: (monthNames[monthNumber - 1] || String(period.Month || '')) + ' ' + year,
-      OpenDate: safeForClient_(period.OpenDate),
-      CloseDate: safeForClient_(period.CloseDate),
-      Status: String(period.Status || '').trim().toUpperCase()
-    };
-  }).filter(Boolean);
-
-  const unique = {};
-  rows.forEach(function(period) { unique[period.PeriodID] = period; });
-
-  return Object.keys(unique).sort().reverse().map(function(id) {
-    return unique[id];
   });
 }
+
+/* getUserReportingPeriods() ditakrif dalam UserDashboard.gs.
+   Versi pendua di sini telah dibuang supaya tiada konflik nama. */
 
 
 /* ============================================================
@@ -929,9 +891,9 @@ function createOrGetCurrentPeriod_() {
     values.findIndex(
       function(row) {
 
-        return String(
+        return normalizePeriodId_(
           row[idx.PeriodID]
-        ).trim() === periodId;
+        ) === periodId;
 
       }
     );
@@ -985,6 +947,16 @@ function createOrGetCurrentPeriod_() {
       new Date() <= closeDate
         ? 'OPEN'
         : 'CLOSED';
+
+    // Tulis semula PeriodID sebagai teks kanonik (YYYY-MM).
+    row[idx.PeriodID] =
+      periodId;
+
+    ensureTextColumn_(
+      sheet,
+      headers,
+      'PeriodID'
+    );
 
 
     sheet
@@ -1071,6 +1043,12 @@ function createOrGetCurrentPeriod_() {
       new Date();
   }
 
+
+  ensureTextColumn_(
+    sheet,
+    headers,
+    'PeriodID'
+  );
 
   sheet.appendRow(row);
 
@@ -1262,13 +1240,25 @@ function getCurrentOpenPeriod_() {
         }
       )
 
+      /*
+       * Tempoh bulan M dibuka 1hb M dan ditutup 7hb M+1, jadi pada
+       * 1–7hb dua tempoh terbuka serentak. Tempoh "semasa" ialah yang
+       * PALING HAMPIR TUTUP (yang perlu dihantar dahulu), bukan yang
+       * terbaharu. Ini mempengaruhi dashboard pengguna dan e-mel reminder.
+       */
       .sort(
         function(a,b) {
 
+          const diff =
+            a.CloseDate.getTime() -
+            b.CloseDate.getTime();
+
+          if (diff !== 0) return diff;
+
           return String(
-            b.PeriodID
+            normalizePeriodId_(a.PeriodID)
           ).localeCompare(
-            String(a.PeriodID)
+            String(normalizePeriodId_(b.PeriodID))
           );
 
         }
@@ -1359,7 +1349,7 @@ function getOrCreateReport_(
       headers,
       row,
       'PeriodID',
-      periodId
+      normalizePeriodId_(periodId)
     );
 
     setByHeader_(
@@ -1388,6 +1378,12 @@ function getOrCreateReport_(
       row,
       'UpdatedAt',
       new Date()
+    );
+
+    ensureTextColumn_(
+      sheet,
+      headers,
+      'PeriodID'
     );
 
     sheet.appendRow(row);
@@ -1495,28 +1491,52 @@ function saveReportForm(
   const user =
     getCurrentUser();
 
-
   assertAuthorized_(
     user
   );
 
+  /*
+   * Semua penulisan bagi satu simpanan dijalankan dalam SATU lock.
+   * replaceActivities_() memadam dan menambah baris; tanpa lock,
+   * dua simpanan serentak boleh memadam baris milik laporan lain.
+   */
+  withWriteLock_(function() {
+    saveReportFormUnlocked_(
+      user,
+      reportId,
+      formData
+    );
+  });
+
+  return getReportForm(
+    reportId
+  );
+}
+
+
+/**
+ * Simpan draf tanpa mengambil lock.
+ * MESTI dipanggil dari dalam withWriteLock_().
+ */
+function saveReportFormUnlocked_(
+  user,
+  reportId,
+  formData
+) {
 
   const report =
     getReportById_(
       reportId
     );
 
-
   assertReportAccess_(
     user,
     report
   );
 
-
   assertEditable_(
     report
   );
-
 
   const allowed =
     new Set(
@@ -1532,7 +1552,6 @@ function saveReportForm(
       )
     );
 
-
   const items =
     formData &&
     Array.isArray(
@@ -1540,7 +1559,6 @@ function saveReportForm(
     )
       ? formData.items
       : [];
-
 
   const validItems = items.filter(function(item) {
     return item && allowed.has(String(item.itemCode));
@@ -1551,7 +1569,6 @@ function saveReportForm(
     validItems,
     user.userId
   );
-
 
   replaceActivities_(
     reportId,
@@ -1565,6 +1582,7 @@ function saveReportForm(
     user.userId
   );
 
+  SpreadsheetApp.flush();
 
   const completion =
     calculateCompletion_(
@@ -1572,11 +1590,9 @@ function saveReportForm(
       report.OrganisationID
     );
 
-
   updateReport_(
     reportId,
     {
-
       UpdatedAt:
         new Date(),
 
@@ -1584,7 +1600,6 @@ function saveReportForm(
         completion
     }
   );
-
 
   writeAudit_(
     reportId,
@@ -1595,10 +1610,7 @@ function saveReportForm(
       '%'
   );
 
-
-  return getReportForm(
-    reportId
-  );
+  return report;
 }
 
 
@@ -1614,84 +1626,85 @@ function submitReportForm(
   const user =
     getCurrentUser();
 
-
   assertAuthorized_(
     user
   );
 
-
-  const report =
+  /*
+   * Semakan awal di luar lock supaya ralat validasi
+   * dipulangkan dengan cepat tanpa menunggu lock.
+   */
+  const precheck =
     getReportById_(
       reportId
     );
 
-
   assertReportAccess_(
     user,
-    report
+    precheck
   );
-
 
   assertEditable_(
-    report
+    precheck
   );
-
 
   const validation =
     validateReportForm_(
-      report,
+      precheck,
       formData
     );
 
-
   if (!validation.ok) {
-
     return {
-
       ok: false,
-
       errors:
         validation.errors
     };
   }
 
+  /*
+   * Simpan + tukar status secara atomik dalam satu lock.
+   */
+  withWriteLock_(function() {
 
-  saveReportForm(
-    reportId,
-    formData
-  );
+    saveReportFormUnlocked_(
+      user,
+      reportId,
+      formData
+    );
 
+    updateReport_(
+      reportId,
+      {
+        Status:
+          'SUBMITTED',
 
-  updateReport_(
-    reportId,
-    {
+        SubmittedBy:
+          user.userId,
 
-      Status:
-        'SUBMITTED',
+        SubmittedAt:
+          new Date(),
 
-      SubmittedBy:
-        user.userId,
+        UpdatedAt:
+          new Date(),
 
-      SubmittedAt:
-        new Date(),
+        CompletionPercent:
+          100
+      }
+    );
 
-      UpdatedAt:
-        new Date(),
+    writeAudit_(
+      reportId,
+      user.userId,
+      'SUBMIT',
+      'Laporan dihantar.'
+    );
+  });
 
-      CompletionPercent:
-        100
-    }
-  );
-
-
-  writeAudit_(
-    reportId,
-    user.userId,
-    'SUBMIT',
-    'Laporan dihantar.'
-  );
-
-
+  /*
+   * E-mel dihantar selepas lock dilepaskan supaya
+   * pengguna lain tidak menunggu MailApp.
+   */
   try {
 
     sendSubmissionNotifications_(
@@ -1712,7 +1725,6 @@ function submitReportForm(
     );
   }
 
-
   return {
 
     ok: true,
@@ -1729,6 +1741,32 @@ function submitReportForm(
         reportId
       )
   };
+}
+
+
+/**
+ * Jalankan fn dalam script lock bagi semua penulisan laporan.
+ */
+function withWriteLock_(
+  fn
+) {
+
+  const lock =
+    LockService.getScriptLock();
+
+  if (!lock.tryLock(30000)) {
+    throw new Error(
+      'Sistem sedang memproses laporan lain. Sila cuba semula sebentar lagi.'
+    );
+  }
+
+  try {
+    return fn();
+  }
+
+  finally {
+    lock.releaseLock();
+  }
 }
 
 
@@ -1850,20 +1888,6 @@ function getItemStatuses_(
    UPSERT STATUS
    ============================================================ */
 
-function upsertItemStatus_(
-  reportId,
-  itemCode,
-  status,
-  userId
-) {
-  upsertItemStatuses_(
-    reportId,
-    [{ itemCode: itemCode, status: status }],
-    userId
-  );
-}
-
-
 /**
  * Simpan semua status item bagi satu laporan dengan satu bacaan
  * bagi helaian REPORT_ITEM_STATUS. Rekod laporan lain tidak disentuh.
@@ -1892,12 +1916,9 @@ function upsertItemStatuses_(
 
   if (!normalized.length) return;
 
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(30000)) {
-    throw new Error('Sistem sedang memproses laporan. Sila cuba semula sebentar lagi.');
-  }
-
-  try {
+  // Nota: tiada lock di sini. Pemanggil (saveReportFormUnlocked_)
+  // sudah berada dalam withWriteLock_().
+  {
     const sheet = getRequiredSheet_(SHEETS.STATUS);
     const lastRow = sheet.getLastRow();
     const lastColumn = sheet.getLastColumn();
@@ -1935,7 +1956,7 @@ function upsertItemStatuses_(
       const row = new Array(headers.length).fill('');
 
       setByHeader_(headers, row, 'RecordID', rowNumber
-        ? String(sheet.getRange(rowNumber, recordIdx + 1).getValue() || '')
+        ? String(values[rowNumber - 2][recordIdx] || '')
         : 'RS-' + Utilities.getUuid());
       setByHeader_(headers, row, 'ReportID', reportId);
       setByHeader_(headers, row, 'ItemCode', item.itemCode);
@@ -1954,8 +1975,6 @@ function upsertItemStatuses_(
       const appendAt = sheet.getLastRow() + 1;
       sheet.getRange(appendAt, 1, rowsToAppend.length, lastColumn).setValues(rowsToAppend);
     }
-  } finally {
-    lock.releaseLock();
   }
 }
 
@@ -2514,6 +2533,55 @@ function assertAuthorized_(
 }
 
 
+/**
+ * Semak sama ada pengguna mempunyai peranan tertentu.
+ * Menggunakan senarai roles (USER_ROLES) dan jatuh balik kepada USERS.Role.
+ */
+function hasRole_(
+  user,
+  role
+) {
+  if (!user) return false;
+  const wanted = String(role || '').trim().toUpperCase();
+  const roles = Array.isArray(user.roles) && user.roles.length
+    ? user.roles
+    : [user.role];
+  return roles.some(function(r) {
+    return String(r || '').trim().toUpperCase() === wanted;
+  });
+}
+
+
+/**
+ * Untuk fungsi pentadbiran (setup database, diagnostik).
+ *
+ * Dibenarkan jika:
+ * - pemilik/pendeploy skrip menjalankannya terus dari editor Apps Script
+ *   (active user === effective user), ATAU
+ * - pengguna berdaftar dengan peranan ADMIN.
+ *
+ * Ini menghalang pengguna domain lain memanggil fungsi pentadbiran
+ * melalui google.script.run dari pelayar.
+ */
+function assertAdminOrOwner_() {
+  const active = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
+  const effective = String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase();
+
+  if (active && effective && active === effective) {
+    return { owner: true, email: active };
+  }
+
+  const user = getCurrentUser();
+  assertAuthorized_(user);
+
+  if (!hasRole_(user, 'ADMIN')) {
+    throw new Error('Fungsi ini hanya untuk ADMIN.');
+  }
+
+  return user;
+}
+
+
 function assertReportAccess_(
   user,
   report
@@ -2659,7 +2727,7 @@ function closeExpiredReportsAsSystem_() {
     const closeDate = parseDate_(row[closeIndex]);
     const status = String(row[statusIndex] || '').trim().toUpperCase();
     if (closeDate && now > closeDate && status !== 'CLOSED') {
-      closedPeriods.add(String(row[periodIdIndex] || '').trim());
+      closedPeriods.add(normalizePeriodId_(row[periodIdIndex]));
       return ['CLOSED'];
     }
     return [row[statusIndex]];
@@ -2681,7 +2749,7 @@ function closeExpiredReportsAsSystem_() {
   if (reportPeriodIndex < 0 || reportStatusIndex < 0) return;
 
   const reportStatusUpdates = reportValues.slice(1).map(function(row) {
-    const pid = String(row[reportPeriodIndex] || '').trim();
+    const pid = normalizePeriodId_(row[reportPeriodIndex]);
     return [closedPeriods.has(pid) ? 'CLOSED' : row[reportStatusIndex]];
   });
 
@@ -2840,7 +2908,7 @@ function getPeriodById_(
  * READ-ONLY; tiada cache supaya status sentiasa terkini.
  */
 function getReportsByPeriod_(periodId) {
-  const wantedPeriod = String(periodId || '').trim();
+  const wantedPeriod = normalizePeriodId_(periodId);
   if (!wantedPeriod) return [];
 
   const sheet = getRequiredSheet_(SHEETS.REPORTS);
@@ -2868,16 +2936,14 @@ function getReportsByPeriod_(periodId) {
     indices[field] = headers.indexOf(field);
   });
 
-  // Search the requested period column only; retrieve matching rows, not all reports.
-  const matches = sheet
-    .getRange(2, periodIndex + 1, lastRow - 1, 1)
-    .createTextFinder(wantedPeriod)
-    .matchEntireCell(true)
-    .matchCase(true)
-    .findAll();
+  // Baca sekali dan tapis menggunakan normalizePeriodId_().
+  // TextFinder tidak sepadan jika Sheets menyimpan PeriodID sebagai Date,
+  // dan getRange() bagi setiap baris adalah perlahan.
+  const values = sheet.getRange(2, 1, lastRow - 1, lastColumn).getValues();
 
-  return matches.map(function(match) {
-    const row = sheet.getRange(match.getRow(), 1, 1, lastColumn).getValues()[0];
+  return values.filter(function(row) {
+    return normalizePeriodId_(row[periodIndex]) === wantedPeriod;
+  }).map(function(row) {
     const report = {};
     requiredFields.forEach(function(field) {
       const index = indices[field];
@@ -3735,9 +3801,9 @@ function sendReminderEmails_(
       .filter(
         function(report) {
 
-          return String(
+          return normalizePeriodId_(
             report.PeriodID
-          ) === String(
+          ) === normalizePeriodId_(
             period.PeriodID
           );
 
@@ -4209,6 +4275,26 @@ function findRow_(
    OBJECT / HEADER HELPERS
    ============================================================ */
 
+/**
+ * Pastikan kolum tertentu berformat teks biasa ('@') supaya
+ * Google Sheets tidak menukar nilai seperti "2026-09" kepada tarikh.
+ */
+function ensureTextColumn_(
+  sheet,
+  headers,
+  header
+) {
+  const index = headers.map(String).indexOf(header);
+  if (index < 0) return;
+  const maxRows = sheet.getMaxRows();
+  if (maxRows < 2) return;
+  const range = sheet.getRange(2, index + 1, maxRows - 1, 1);
+  if (range.getNumberFormat() !== '@') {
+    range.setNumberFormat('@');
+  }
+}
+
+
 function rowToObject_(
   headers,
   row
@@ -4531,6 +4617,8 @@ function escapeHtml_(
  * daripada Apps Script jika berlaku masalah.
  */
 function diagnoseReportingSystem() {
+
+  assertAdminOrOwner_();
 
   const user =
     getCurrentUser();

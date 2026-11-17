@@ -27,3 +27,22 @@ jobs:
             echo "Checking ${file}"
             node --check < "${file}"
           done
+
+      - name: Check combined project scope (duplicate const/let)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Apps Script memuatkan semua .gs dalam satu skop global.
+          cat *.gs > /tmp/apps-script-combined.js
+          node --check /tmp/apps-script-combined.js
+
+      - name: Detect duplicate function names
+        shell: bash
+        run: |
+          set -euo pipefail
+          dups=$(grep -ho '^function [A-Za-z0-9_$]*' *.gs | sort | uniq -d || true)
+          if [ -n "$dups" ]; then
+            echo "Fungsi pendua ditemui (versi terakhir dimuat akan menang):"
+            echo "$dups"
+            exit 1
+          fi
